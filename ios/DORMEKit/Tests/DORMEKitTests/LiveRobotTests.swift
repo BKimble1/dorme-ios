@@ -35,6 +35,7 @@ final class LiveRobotTests: XCTestCase {
 
         var request = URLRequest(url: URL(string: base.replacingOccurrences(of: "http://", with: "ws://") + "/api/v1/ws")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(token, forHTTPHeaderField: "X-DORME-Token")      // exactly what the app sends
         request.timeoutInterval = 5          // the app uses the same 5 s
         let task = URLSession.shared.webSocketTask(with: request)
         task.resume()

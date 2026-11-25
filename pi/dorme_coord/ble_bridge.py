@@ -250,7 +250,7 @@ def main():  # pragma: no cover - needs BlueZ
         def Release(self):
             pass
 
-    cache = {"status": b'{"v":1}', "state": None, "result": b'{"ok":null}'}
+    cache = {"status": b'{"v":1}', "state": None, "result": b'{"ok":null}', "addrs": []}
     assembler = ChunkAssembler()
 
     def on_command(data):
@@ -298,7 +298,7 @@ def main():  # pragma: no cover - needs BlueZ
     status_chr = Characteristic(svc_path + "/char0", api.BLE_STATUS_UUID, ["read", "notify"], svc_path,
                                 reader=lambda: cache["status"])
     setup_chr = Characteristic(svc_path + "/char1", api.BLE_SETUP_UUID, ["read"], svc_path,
-                               reader=lambda: setup_payload(int(args.api.rsplit(":", 1)[-1]), local_addresses()))
+                               reader=lambda: setup_payload(int(args.api.rsplit(":", 1)[-1]), cache["addrs"] or local_addresses()))
     cmd_chr = Characteristic(svc_path + "/char2", api.BLE_COMMAND_UUID, ["write"], svc_path, writer=on_command)
     wifi_chr = Characteristic(svc_path + "/char3", api.BLE_WIFI_UUID, ["write"], svc_path, writer=on_wifi)
     result_chr = Characteristic(svc_path + "/char4", api.BLE_RESULT_UUID, ["read", "notify"], svc_path,
@@ -318,7 +318,10 @@ def main():  # pragma: no cover - needs BlueZ
 
     def refresh():
         try:
-            cache["status"] = status_payload(fetch_state(args.api))
+            state = fetch_state(args.api)
+            cache["status"] = status_payload(state)
+            net = state.get("network") or {}
+            cache["addrs"] = list(net.get("ipv4") or []) + list((net.get("remote") or {}).get("ips") or [])
             report("advertising")
         except (OSError, ValueError):
             cache["status"] = json.dumps({"v": 1, "err": "coordinator"}).encode()

@@ -43,6 +43,7 @@ class Request:
         self.method = method
         parts = urlsplit(target)
         self.path = parts.path
+        self.query = dict(q.split("=", 1) for q in parts.query.split("&") if "=" in q)
         self.headers = headers
         self.body = body
         self.peer = peer
@@ -151,9 +152,14 @@ class ApiServer:
         await self._send(writer, status, json.dumps(obj, separators=(",", ":")).encode())
 
     def _session(self, req):
+        # 2026-11-25: Apple's URLSessionWebSocketTask does not send a URLRequest's Authorization header on the
+        # upgrade (it is a header the URL Loading System reserves), so the app also sends X-DORME-Token; the
+        # ?token= query form is a last resort for clients that cannot set headers.
         authz = req.headers.get("authorization", "")
-        if authz.lower().startswith("bearer "):
-            sid = self.auth.check(authz[7:].strip())
+        candidates = [authz[7:].strip()] if authz.lower().startswith("bearer ") else []
+        candidates += [req.headers.get("x-dorme-token", "").strip(), req.query.get("token", "")]
+        for token in candidates:
+            sid = self.auth.check(token) if token else None
             if sid:
                 return {"kind": "app", "id": "s-" + sid, "authenticated": True}
         if self.trust_loopback and req.is_loopback and "origin" not in req.headers:
@@ -235,6 +241,9 @@ class ApiServer:
             self._require(source)
             await self._mjpeg(writer)
         elif p == "/api/v1/ws" and m == "GET":
+            if not source["authenticated"]:
+                log.warning("WebSocket upgrade refused (401): no valid token from %s; headers seen: %s",
+                            (req.peer or ("?",))[0], sorted(k for k in req.headers if k != "authorization"))
             self._require(source)
             await self._websocket(req, reader, writer, source)
         elif p.startswith(("/api/v1/system", "/api/v1/network", "/api/v1/remote", "/api/v1/ble/")):

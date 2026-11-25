@@ -55,6 +55,9 @@ jobs:
       - name: DORMEKit tests (macOS host), including live tests against the simulator
         working-directory: ios/DORMEKit
         run: swift test
+      - name: Robot simulator log
+        if: always()
+        run: cat "$RUNNER_TEMP/sim.log" || true
       - name: Generate project
         working-directory: ios
         run: xcodegen generate

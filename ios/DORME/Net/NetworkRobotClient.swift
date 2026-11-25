@@ -77,7 +77,11 @@ final class NetworkRobotClient: RobotClient {
         var req = URLRequest(url: base.appendingPathComponent(path))
         req.httpMethod = method
         req.timeoutInterval = timeout
-        if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let token {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            // URLSessionWebSocketTask drops Authorization on the upgrade (reserved header); the robot also reads this.
+            req.setValue(token, forHTTPHeaderField: "X-DORME-Token")
+        }
         if let body {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try? JSONSerialization.data(withJSONObject: body)
