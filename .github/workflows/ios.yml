@@ -26,7 +26,12 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - name: Select Xcode 26 (App Store Connect requires the iOS 26 SDK or later)
+        run: |
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$X" ] || { echo "::error::no Xcode 26 on this runner"; ls -d /Applications/Xcode*; exit 1; }
+          sudo xcode-select -s "$X"
       - name: Tool versions
         run: |
           xcodebuild -version
@@ -68,7 +73,7 @@ jobs:
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       BUILD_NUMBER: ${{ github.run_number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check settings are present
         run: |
           for v in TEAM_ID BUNDLE_ID ASC_KEY_ID ASC_ISSUER_ID; do
@@ -82,6 +87,12 @@ jobs:
           mkdir -p "$RUNNER_TEMP/keys"
           printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
           echo "KEY_PATH=$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" >> "$GITHUB_ENV"
+      - name: Select Xcode 26 (App Store Connect requires the iOS 26 SDK or later)
+        run: |
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$X" ] || { echo "::error::no Xcode 26 on this runner"; ls -d /Applications/Xcode*; exit 1; }
+          sudo xcode-select -s "$X"
+          xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
