@@ -20,7 +20,7 @@ from .api import ack
 
 log = logging.getLogger("dorme-coord.http")
 
-WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC11B85"
+WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"   # RFC 6455 section 1.3 (a typo here broke every iOS connection until 2026-11-25)
 MAX_HEADER = 8192
 MAX_BODY = 16384
 MAX_WS_FRAME = 65536
