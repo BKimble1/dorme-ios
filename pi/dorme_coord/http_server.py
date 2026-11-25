@@ -374,12 +374,15 @@ class ApiServer:
     # ------------------------------------------------------------------ WebSocket
     async def _websocket(self, req, reader, writer, source):
         h = req.headers
+        log.info("WebSocket upgrade from %s: %s", (req.peer or ("?",))[0],
+                 {k: v for k, v in h.items() if k not in ("authorization", "x-dorme-token", "cookie")})
         if h.get("upgrade", "").lower() != "websocket" or "sec-websocket-key" not in h:
             raise HttpError(400, "Expected a WebSocket upgrade")
         if h.get("sec-websocket-version") != "13":
             raise HttpError(400, "WebSocket version 13 required")
         origin = h.get("origin")
         if origin and urlsplit(origin).netloc != h.get("host"):
+            log.warning("WebSocket refused (403): origin %r host %r", origin, h.get("host"))
             raise HttpError(403, "Cross-origin WebSocket refused")
         accept = base64.b64encode(hashlib.sha1((h["sec-websocket-key"] + WS_GUID).encode()).digest()).decode()
         writer.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"

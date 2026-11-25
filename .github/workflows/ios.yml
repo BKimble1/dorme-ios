@@ -55,9 +55,13 @@ jobs:
       - name: DORMEKit tests (macOS host), including live tests against the simulator
         working-directory: ios/DORMEKit
         run: swift test
-      - name: Robot simulator log
+      - name: Robot simulator log and a raw WebSocket handshake
         if: always()
-        run: cat "$RUNNER_TEMP/sim.log" || true
+        run: |
+          TOKEN=$(curl -s -X POST -H 'Content-Type: application/json' -d "{\"pin\":\"$DORME_SIM_PIN\"}" http://127.0.0.1:8099/api/v1/pair | python3 -c 'import sys,json; print(json.load(sys.stdin).get("result",{}).get("token",""))') || true
+          curl -s -i -N --max-time 3 -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H "X-DORME-Token: $TOKEN" http://127.0.0.1:8099/api/v1/ws | head -c 400 | cat -v || true
+          echo; echo '--- server log'; cat "$RUNNER_TEMP/sim.log" || true
       - name: Generate project
         working-directory: ios
         run: xcodegen generate
