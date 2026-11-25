@@ -30,6 +30,7 @@ struct FaceView: View {
         case "puzzled": return "Puzzled"
         case "low_energy": return "Low energy"
         case "sleepy": return "Going to sleep"
+        case "pairing": return "Showing a pairing code"
         case "fault": return "Worried, a fault is active"
         default: return "Idle"
         }

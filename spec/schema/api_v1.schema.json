@@ -61,7 +61,7 @@
                   "properties": {"plug": {"type": ["boolean", "null"]}, "shutting_down": {"type": ["string", "null"]},
                                  "motor_rail_on": {"type": ["boolean", "null"]}, "motor_rail_v": {"type": ["number", "null"]}}},
         "face": {"type": "object", "required": ["state", "adapter"],
-                 "properties": {"state": {"enum": ["idle", "listening", "moving", "happy", "puzzled", "low_energy", "sleepy", "fault"]},
+                 "properties": {"state": {"enum": ["idle", "listening", "moving", "happy", "puzzled", "low_energy", "sleepy", "fault", "pairing"]},
                                 "adapter": {"type": "string"}, "adapter_reason": {"type": ["string", "null"]}}},
         "peripherals": {"type": "object", "required": ["camera", "audio", "ble", "sonar"],
                         "properties": {"camera": {"$ref": "#/$defs/peripheral"}, "audio": {"$ref": "#/$defs/peripheral"},

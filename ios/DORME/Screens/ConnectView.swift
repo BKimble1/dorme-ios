@@ -8,6 +8,7 @@ struct ConnectView: View {
     @State private var host = ""
     @State private var port = "8080"
     @State private var pin = ""
+    @State private var codeShown = false
     @State private var pairing = false
     @State private var pairMessage: String?
     @State private var ble = BLEScanner()
@@ -94,20 +95,34 @@ struct ConnectView: View {
             case .connected: Label("Connected", systemImage: "checkmark.circle.fill").font(.footnote).foregroundStyle(Theme.good)
             case .offline(let why): Label(why, systemImage: "wifi.slash").font(.footnote).foregroundStyle(Theme.bad)
             case .unavailable(let why): Label(why, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(Theme.bad)
-            case .pairingRequired: Label("Robot found. Enter its PIN below.", systemImage: "key").font(.footnote)
+            case .pairingRequired: Label("Robot found. Enter the code from its screen below.", systemImage: "key").font(.footnote)
             case .idle: EmptyView()
             }
         }
+    }
+
+    private var codeNote: String {
+        if codeShown {
+            return "DORM-E is showing a 6-digit code on its screen. Type it here within 2 minutes. It works once. (The PIN from the robot's label works too.)"
+        }
+        return "Asking DORM-E to show a code on its screen… If its screen is off, enter the PIN from the robot's label instead."
+    }
+
+    private func requestCode() async {
+        let ack = await store.showPairingCode()
+        codeShown = ack.ok
+        pairMessage = ack.ok ? nil : ack.message
     }
 
     private var pairCard: some View {
         Card(fill: Theme.cardRaised) {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Pair", systemImage: "key.fill").font(.headline)
-                Text("Enter the 6 to 8 digit PIN from the robot's label. The app keeps a session token; it never stores the PIN.")
+                Text(codeNote)
                     .font(.subheadline).foregroundStyle(Theme.inkSecondary)
-                SecureField("PIN", text: $pin)
+                TextField("6-digit code", text: $pin)
                     .keyboardType(.numberPad).textContentType(.oneTimeCode)
+                    .font(.system(.title2, design: .monospaced))
                     .padding(12).background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 Button {
                     pairing = true
@@ -122,9 +137,12 @@ struct ConnectView: View {
                 }
                 .buttonStyle(.borderedProminent).tint(Theme.ink)
                 .disabled(pin.count < 6 || pairing)
+                Button("Show the code on the robot again") { Task { await requestCode() } }
+                    .font(.footnote)
                 if let pairMessage { Label(pairMessage, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Theme.bad) }
             }
         }
+        .task { if !codeShown { await requestCode() } }
     }
 
     private var nearbyCard: some View {

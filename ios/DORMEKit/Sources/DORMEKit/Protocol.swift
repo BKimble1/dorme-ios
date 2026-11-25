@@ -81,8 +81,8 @@ public enum AckCode {
         "BAD_REQUEST": "The request was malformed.",
         "UNKNOWN_COMMAND": "The robot does not know this command.",
         "RATE_LIMITED": "Too many messages; slow down.",
-        "LOCKED_OUT": "Too many wrong PINs; wait and try again.",
-        "BAD_PIN": "That PIN is not correct.",
+        "LOCKED_OUT": "Too many wrong codes; wait and try again.",
+        "BAD_PIN": "That code is not correct.",
         "BUSY": "Another controller or task owns movement.",
         "NOT_OWNER": "This controller does not own movement.",
         "STALE": "That command is out of date. Press again.",
@@ -160,6 +160,10 @@ public enum ClientEvent: Sendable {
     case tasks(TaskList)
 }
 
+public extension RobotClient {
+    func showPairingCode() async -> Ack { .failure(nil, "UNAVAILABLE") }
+}
+
 /// One interface for the isolated demo and the real Wi-Fi robot. Everything the UI does goes
 /// through it, so the demo can never reach a real robot and the real client never invents data.
 @MainActor
@@ -170,6 +174,8 @@ public protocol RobotClient: AnyObject {
     func connect() async
     func disconnect() async
     func pair(pin: String) async -> Ack
+    /// Ask the robot to draw a one-time pairing code on its own screen. The code is never sent to the app.
+    func showPairingCode() async -> Ack
     func send(_ command: RobotCommand) async -> Ack
     /// Stop uses the most direct path available and needs no pairing.
     func stop() async -> Ack

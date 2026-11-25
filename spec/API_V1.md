@@ -25,6 +25,11 @@ Every command source — the app, BLE, tasks, local tools (and later voice) — 
 - `POST /api/v1/pair {"pin": "123456", "client_name": "iPhone"}` → ack with `result.token`.
   5 wrong PINs lock pairing for 60 s, doubling. PIN source: the existing dorme-web label store if readable,
   else the coordinator's own `pin.txt` (root-only, never printed on hardware).
+- `POST /api/v1/pair/show` (no auth, body ignored): the robot draws a fresh **one-time 6-digit code** in large
+  digits on its own face screen for 120 s (asking again while one is live keeps the same code and its expiry).
+  The reply never contains the code: `{"ok": true, "result": {"expires_in_s": 118, "shown_on": "robot_screen"}}`.
+  `POST /api/v1/pair` accepts that code once, in place of the PIN; it counts towards the same lockout.
+  `503 UNAVAILABLE` if the robot has no working screen; `423 LOCKED_OUT` during a lockout.
 - Then send `Authorization: Bearer <token>` on HTTP and on the WebSocket upgrade.
 - **Stop needs no pairing**: `POST /api/v1/stop`. Anyone on the network can stop; nobody unpaired can start.
 - Loopback callers are trusted when `trust_loopback` is true (hardware default, for the BLE bridge).

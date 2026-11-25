@@ -126,6 +126,11 @@ final class RobotStore {
         return await client.pair(pin: pin)
     }
 
+    func showPairingCode() async -> Ack {
+        guard let client else { return .failure(nil, "OFFLINE") }
+        return await client.showPairingCode()
+    }
+
     private func handle(_ event: ClientEvent) {
         switch event {
         case .phase(let p):

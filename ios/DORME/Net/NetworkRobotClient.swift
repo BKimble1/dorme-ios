@@ -131,7 +131,9 @@ final class NetworkRobotClient: RobotClient {
                     closeSocket(reason: nil)
                     onEvent?(.phase(.pairingRequired))
                 } else {
-                    closeSocket(reason: "Connection to the robot was lost.")
+                    let detail = (error as? URLError).map { "error \($0.code.rawValue)" } ?? error.localizedDescription
+                    let http = status.map { ", HTTP \($0)" } ?? ""
+                    closeSocket(reason: "Connection to the robot was lost (\(detail)\(http)).")
                     scheduleReconnect()
                 }
                 return
@@ -203,6 +205,15 @@ final class NetworkRobotClient: RobotClient {
             return ack
         } catch {
             return .failure(nil, "OFFLINE", "Can't reach the robot to pair.")
+        }
+    }
+
+    func showPairingCode() async -> Ack {
+        do {
+            let (data, _) = try await session.data(for: request("api/v1/pair/show", method: "POST", body: [:]))
+            return try DORMEJSON.decoder.decode(Ack.self, from: data)
+        } catch {
+            return .failure(nil, "OFFLINE", "Can't reach the robot to show a code.")
         }
     }
 
