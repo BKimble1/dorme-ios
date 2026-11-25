@@ -29,6 +29,14 @@ struct PartDetailView: View {
                     Spacer()
                 }
                 .staleness(store.dimmed)
+                if PartKey.norm(partID) == PartKey.norm("ESP32_U7"), let fault = store.state?.fault.active {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(fault.detail).font(.subheadline).foregroundStyle(Theme.inkSecondary)
+                        if fault.phoneCanClear {
+                            Button("Clear fault") { store.rearm() }.buttonStyle(.borderedProminent).tint(Theme.ink)
+                        }
+                    }
+                }
                 if let values = detail?.values, !values.isEmpty {
                     VStack(spacing: 0) {
                         ForEach(values.keys.sorted(), id: \.self) { key in

@@ -1,10 +1,15 @@
-# This git repository publishes only the iPhone app, the shared spec it is tested against, and CI.
-# Everything else in dorme_platform (Pi coordinator, deploy files, reports) stays local.
+# This git repository publishes the iPhone app, the shared spec, CI, and the robot's coordinator package
+# (no secrets in any of them). Deploy files, tests needing the robot, and reports stay local.
 /*
 !/.gitignore
 !/.github/
 !/ios/
 !/spec/
+# The robot's server package and the codec copy it needs, so CI can run it in simulator mode (2026-11-25).
+!/pi/
+/pi/*
+!/pi/dorme_coord/
+!/pi/vendor/
 # Generated or local
 ios/DORME.xcodeproj/
 ios/**/.build/
@@ -13,3 +18,4 @@ ios/**/.swiftpm/
 *.mobileprovision
 *.p12
 .DS_Store
+__pycache__/

@@ -39,7 +39,20 @@ jobs:
           swift --version
       - name: Install XcodeGen
         run: brew install xcodegen
-      - name: DORMEKit tests (macOS host)
+      - name: Start the robot's server in simulator mode (for the live network tests)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install -q cryptography
+          mkdir -p "$RUNNER_TEMP/dorme-sim"
+          PYTHONPATH=pi DORME_ROBOT_LIB=pi/vendor nohup "$RUNNER_TEMP/venv/bin/python" -m dorme_coord --backend sim --no-bench             --host 127.0.0.1 --port 8099 --state-dir "$RUNNER_TEMP/dorme-sim" > "$RUNNER_TEMP/sim.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8099/api/v1/info >/dev/null && break; sleep 1; done
+          cat "$RUNNER_TEMP/sim.log"
+          PIN=$(grep -oE "pairing PIN: [0-9]+" "$RUNNER_TEMP/sim.log" | tail -1 | awk '{print $3}')
+          [ -n "$PIN" ] || { echo "::error::simulator did not start"; exit 1; }
+          echo "DORME_SIM_PIN=$PIN" >> "$GITHUB_ENV"
+          echo "DORME_SIM_URL=http://127.0.0.1:8099" >> "$GITHUB_ENV"
+          echo "DORME_SIM_FACE=$RUNNER_TEMP/dorme-sim/face/state.json" >> "$GITHUB_ENV"
+      - name: DORMEKit tests (macOS host), including live tests against the simulator
         working-directory: ios/DORMEKit
         run: swift test
       - name: Generate project
