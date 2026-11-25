@@ -1,0 +1,96 @@
+[
+  {
+    "code": null,
+    "id": "c-drive.claim",
+    "message": "",
+    "ok": true,
+    "result": {
+      "claim": "0-35ca6145",
+      "hold_interval_ms": 200,
+      "lease_ms": 500,
+      "outputs": "disabled_bench"
+    },
+    "type": "ack",
+    "v": 1
+  },
+  {
+    "code": null,
+    "id": "c-drive.hold",
+    "message": "",
+    "ok": true,
+    "result": {
+      "delivered": false,
+      "direction": "F",
+      "note": "Bench mode: motor outputs disabled; nothing was sent to the controller."
+    },
+    "type": "ack",
+    "v": 1
+  },
+  {
+    "code": "STALE",
+    "id": "c-drive.hold",
+    "message": "The command is out of date (old claim or old sequence number).",
+    "ok": false,
+    "result": {},
+    "type": "ack",
+    "v": 1
+  },
+  {
+    "code": null,
+    "id": "c-stop",
+    "message": "",
+    "ok": true,
+    "result": {
+      "cancelled_task": false,
+      "reached_controller": true,
+      "warning": null
+    },
+    "type": "ack",
+    "v": 1
+  },
+  {
+    "code": "BUSY",
+    "id": "c-drive.claim",
+    "message": "Another controller or task owns movement.",
+    "ok": false,
+    "result": {},
+    "type": "ack",
+    "v": 1
+  },
+  {
+    "code": "TASK_ACTIVE",
+    "id": "c-task.start",
+    "message": "A task is running. Cancel it first.",
+    "ok": false,
+    "result": {},
+    "type": "ack",
+    "v": 1
+  },
+  {
+    "code": "CONFIRM_REQUIRED",
+    "id": "c-fault.rearm",
+    "message": "This needs an explicit confirm.",
+    "ok": false,
+    "result": {},
+    "type": "ack",
+    "v": 1
+  },
+  {
+    "code": "LINK_DOWN",
+    "id": "c-drive.claim",
+    "message": "The motor controller (ESP32) is not connected.",
+    "ok": false,
+    "result": {},
+    "type": "ack",
+    "v": 1
+  },
+  {
+    "code": "UNAUTHORIZED",
+    "id": "c-drive.claim",
+    "message": "Pair with the robot first.",
+    "ok": false,
+    "result": {},
+    "type": "ack",
+    "v": 1
+  }
+]

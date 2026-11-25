@@ -1,0 +1,81 @@
+[
+  {
+    "event": {
+      "esp32": true,
+      "kind": "link.changed",
+      "linkd": true
+    },
+    "type": "event",
+    "v": 1
+  },
+  {
+    "event": {
+      "kind": "motion.stopped",
+      "reason": "S"
+    },
+    "type": "event",
+    "v": 1
+  },
+  {
+    "event": {
+      "kind": "drive.owner",
+      "owner": {
+        "client": "phone-1",
+        "direction": null,
+        "source": "app"
+      }
+    },
+    "type": "event",
+    "v": 1
+  },
+  {
+    "event": {
+      "cancelled_task": false,
+      "kind": "stop",
+      "reached_controller": true,
+      "released_owner": true,
+      "source": "app"
+    },
+    "type": "event",
+    "v": 1
+  },
+  {
+    "event": {
+      "kind": "task.updated",
+      "task": {
+        "action": "self_check",
+        "bench": false,
+        "created_at": 1795602147.987,
+        "elapsed_ms": null,
+        "ended_at": null,
+        "error": null,
+        "id": "t-02147-883d",
+        "progress": 0.0,
+        "result": {},
+        "source": {
+          "id": "phone-1",
+          "kind": "app"
+        },
+        "state": "pending",
+        "step": "Waiting to start",
+        "title": "Self check",
+        "uses_motion": false
+      }
+    },
+    "type": "event",
+    "v": 1
+  },
+  {
+    "event": {
+      "fault": {
+        "code": "JAM",
+        "detail": "Sonar range did not change while driving straight.",
+        "rearm": "phone_or_voice",
+        "title": "Possible jam"
+      },
+      "kind": "fault.raised"
+    },
+    "type": "event",
+    "v": 1
+  }
+]

@@ -1,0 +1,135 @@
+{
+  "api_version": 1,
+  "battery": {
+    "basis": "INA219 bus voltage at the logic rail",
+    "percent": false,
+    "voltage": true
+  },
+  "ble": {
+    "command_uuid": "6f1e0004-4c2b-4b7e-9d8a-d0a7e0b10001",
+    "service_uuid": "6f1e0001-4c2b-4b7e-9d8a-d0a7e0b10001",
+    "setup_uuid": "6f1e0003-4c2b-4b7e-9d8a-d0a7e0b10001",
+    "status_uuid": "6f1e0002-4c2b-4b7e-9d8a-d0a7e0b10001"
+  },
+  "camera": {
+    "orientation": "portrait",
+    "rotation_deg": null,
+    "rotation_verified": false,
+    "snapshot_path": "/api/v1/camera/snapshot.jpg",
+    "stream_path": "/api/v1/camera/stream.mjpg"
+  },
+  "commands": [
+    "stop",
+    "drive.claim",
+    "drive.hold",
+    "drive.release",
+    "task.start",
+    "task.cancel",
+    "fault.rearm",
+    "state.get",
+    "capabilities.get"
+  ],
+  "drive": {
+    "directions": [
+      "F",
+      "B",
+      "L",
+      "R"
+    ],
+    "hold_interval_ms": 200,
+    "hold_lease_ms": 500,
+    "hold_to_drive": true,
+    "speed_levels_pct": [
+      30
+    ],
+    "speed_note": "Phone speed is fixed at SPEED_LOW in V1. Firmware caps PWM at 60 %.",
+    "turn_speed_pct": 60
+  },
+  "not_measured": [
+    "current",
+    "runtime",
+    "temperature",
+    "motor_rpm",
+    "charging_status",
+    "wheel_speed"
+  ],
+  "staleness": {
+    "offline_after_ms": 10000,
+    "stale_after_ms": 3000
+  },
+  "tasks": [
+    {
+      "action": "greet",
+      "available": true,
+      "detail": "Happy face for a moment. No movement.",
+      "symbol": "hand.wave",
+      "title": "Say hello",
+      "unavailable_code": null,
+      "unavailable_reason": null,
+      "uses_motion": false
+    },
+    {
+      "action": "self_check",
+      "available": true,
+      "detail": "Checks each subsystem and reports only what it can actually measure.",
+      "symbol": "checklist",
+      "title": "Self check",
+      "unavailable_code": null,
+      "unavailable_reason": null,
+      "uses_motion": false
+    },
+    {
+      "action": "move_forward_short",
+      "available": true,
+      "detail": "One bounded forward move at the slow speed. Firmware clips and can refuse it.",
+      "symbol": "arrow.up",
+      "title": "Short move forward",
+      "unavailable_code": null,
+      "unavailable_reason": null,
+      "uses_motion": true
+    },
+    {
+      "action": "turn_left_short",
+      "available": true,
+      "detail": "One short pivot. Turning capability is not established.",
+      "symbol": "arrow.counterclockwise",
+      "title": "Short turn left",
+      "unavailable_code": null,
+      "unavailable_reason": null,
+      "uses_motion": true
+    },
+    {
+      "action": "turn_right_short",
+      "available": true,
+      "detail": "One short pivot. Turning capability is not established.",
+      "symbol": "arrow.clockwise",
+      "title": "Short turn right",
+      "unavailable_code": null,
+      "unavailable_reason": null,
+      "uses_motion": true
+    },
+    {
+      "action": "take_photo",
+      "available": true,
+      "detail": "One still from the head camera.",
+      "symbol": "camera",
+      "title": "Take a photo",
+      "unavailable_code": null,
+      "unavailable_reason": null,
+      "uses_motion": false
+    },
+    {
+      "action": "go_to_desk",
+      "available": false,
+      "detail": "Drive to a marked spot.",
+      "symbol": "map",
+      "title": "Go to desk",
+      "unavailable_code": "UNAVAILABLE",
+      "unavailable_reason": "Needs marker navigation, which is not built yet.",
+      "uses_motion": true
+    }
+  ],
+  "unauthenticated_commands": [
+    "stop"
+  ]
+}

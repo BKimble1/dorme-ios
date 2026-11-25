@@ -1,0 +1,77 @@
+[
+  {
+    "args": {},
+    "id": "c1",
+    "name": "stop",
+    "type": "command",
+    "v": 1
+  },
+  {
+    "args": {},
+    "id": "c2",
+    "name": "drive.claim",
+    "type": "command",
+    "v": 1
+  },
+  {
+    "args": {
+      "claim": "3-1a2b3c4d",
+      "direction": "F",
+      "seq": 1
+    },
+    "id": "c3",
+    "name": "drive.hold",
+    "type": "command",
+    "v": 1
+  },
+  {
+    "args": {
+      "claim": "3-1a2b3c4d"
+    },
+    "id": "c4",
+    "name": "drive.release",
+    "type": "command",
+    "v": 1
+  },
+  {
+    "args": {
+      "action": "self_check"
+    },
+    "id": "c5",
+    "name": "task.start",
+    "type": "command",
+    "v": 1
+  },
+  {
+    "args": {
+      "task_id": "t-12345-ab12"
+    },
+    "id": "c6",
+    "name": "task.cancel",
+    "type": "command",
+    "v": 1
+  },
+  {
+    "args": {
+      "confirm": true
+    },
+    "id": "c7",
+    "name": "fault.rearm",
+    "type": "command",
+    "v": 1
+  },
+  {
+    "args": {},
+    "id": "c8",
+    "name": "state.get",
+    "type": "command",
+    "v": 1
+  },
+  {
+    "args": {},
+    "id": "c9",
+    "name": "capabilities.get",
+    "type": "command",
+    "v": 1
+  }
+]

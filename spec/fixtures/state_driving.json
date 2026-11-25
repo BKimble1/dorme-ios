@@ -1,0 +1,100 @@
+{
+  "battery": {
+    "age_ms": 0,
+    "basis": "INA219 bus voltage at the logic rail",
+    "low": null,
+    "low_basis": "simulated threshold",
+    "low_threshold_v": 9.0,
+    "percent": null,
+    "percent_reason": "Not calibrated. Needs the discharge log (bench test B22).",
+    "simulated": true,
+    "under_load": true,
+    "voltage_reason": null,
+    "voltage_v": 9.6
+  },
+  "connection": {
+    "esp32": "up",
+    "esp_state": "MOVING",
+    "firmware": null,
+    "hb_gap_max_ms": 95,
+    "linkd_dry_run": null,
+    "reset_reason": null,
+    "stat_age_ms": 0
+  },
+  "face": {
+    "adapter": "simulated",
+    "adapter_reason": "Simulator writes to its own folder, not a display.",
+    "state": "moving"
+  },
+  "fault": {
+    "active": null,
+    "last_off_forced": false
+  },
+  "motion": {
+    "basis": "commanded",
+    "direction": "F",
+    "drive_allowed": true,
+    "drive_block": null,
+    "drive_block_message": null,
+    "last_stop": null,
+    "outputs": "enabled",
+    "owner": {
+      "client": "phone-1",
+      "direction": "F",
+      "source": "app"
+    },
+    "state": "moving"
+  },
+  "network": {
+    "trust": "private"
+  },
+  "not_measured": [
+    "current",
+    "runtime",
+    "temperature",
+    "motor_rpm",
+    "charging_status",
+    "wheel_speed"
+  ],
+  "peripherals": {
+    "audio": {
+      "playback": "not_connected",
+      "reason": "The simulator has no audio device.",
+      "status": "unavailable"
+    },
+    "ble": {
+      "reason": "The simulator does not advertise over Bluetooth.",
+      "status": "unavailable"
+    },
+    "camera": {
+      "orientation": "portrait",
+      "reason": "Synthetic test frames. No real camera.",
+      "rotation_deg": null,
+      "rotation_verified": false,
+      "status": "simulated",
+      "stream_path": "/api/v1/camera/stream.mjpg"
+    },
+    "sonar": {
+      "distance_cm": 120,
+      "reason": null,
+      "status": "simulated"
+    }
+  },
+  "power": {
+    "motor_rail_on": true,
+    "motor_rail_v": 9.3,
+    "plug": false,
+    "shutting_down": null
+  },
+  "robot": {
+    "api": 1,
+    "backend": "frames",
+    "bench_mode": false,
+    "mode": "simulator",
+    "name": "DORM-E",
+    "simulated": true,
+    "software": "0.1.0"
+  },
+  "seq": 3,
+  "task": null
+}

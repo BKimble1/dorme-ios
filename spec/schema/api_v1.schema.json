@@ -1,0 +1,106 @@
+{
+  "$comment": "DORM-E app API v1. Subset of JSON Schema (type, required, properties, enum, items, $ref) checked by pi/tests/schema_check.py and mirrored by ios/DORMEKit Models.swift. Extra keys are allowed so v1 can grow without breaking clients.",
+  "$defs": {
+    "source": {
+      "type": "object", "required": ["kind", "id"],
+      "properties": {"kind": {"enum": ["app", "ble", "voice", "task", "local"]}, "id": {"type": "string"}}
+    },
+    "task": {
+      "type": "object",
+      "required": ["id", "action", "title", "state", "progress", "step", "uses_motion", "bench", "result", "error"],
+      "properties": {
+        "id": {"type": "string"}, "action": {"type": "string"}, "title": {"type": "string"},
+        "state": {"enum": ["pending", "running", "succeeded", "failed", "cancelled"]},
+        "progress": {"type": ["number", "null"]}, "step": {"type": "string"},
+        "source": {"$ref": "#/$defs/source"}, "uses_motion": {"type": "boolean"}, "bench": {"type": "boolean"},
+        "created_at": {"type": "number"}, "ended_at": {"type": ["number", "null"]}, "elapsed_ms": {"type": ["integer", "null"]},
+        "result": {"type": "object"},
+        "error": {"type": ["object", "null"], "properties": {"code": {"type": "string"}, "message": {"type": "string"}}}
+      }
+    },
+    "fault": {
+      "type": "object", "required": ["code", "title", "detail", "rearm"],
+      "properties": {"code": {"type": "string"}, "title": {"type": "string"}, "detail": {"type": "string"},
+                     "rearm": {"enum": ["phone_or_voice", "phone", "service", "auto"]}}
+    },
+    "peripheral": {
+      "type": "object", "required": ["status"],
+      "properties": {"status": {"type": "string"}, "reason": {"type": ["string", "null"]}}
+    },
+    "state": {
+      "type": "object",
+      "required": ["seq", "robot", "connection", "battery", "motion", "task", "fault", "power", "face", "peripherals", "network", "not_measured"],
+      "properties": {
+        "seq": {"type": "integer"},
+        "robot": {"type": "object", "required": ["name", "mode", "simulated", "software", "api", "bench_mode"],
+                  "properties": {"name": {"type": "string"}, "mode": {"enum": ["hardware", "simulator"]},
+                                 "simulated": {"type": "boolean"}, "software": {"type": "string"}, "api": {"type": "integer"},
+                                 "bench_mode": {"type": "boolean"}, "backend": {"type": "string"}}},
+        "connection": {"type": "object", "required": ["esp32", "esp_state", "stat_age_ms"],
+                       "properties": {"esp32": {"enum": ["up", "lost", "never", "linkd_down"]},
+                                      "esp_state": {"type": ["string", "null"]}, "stat_age_ms": {"type": ["integer", "null"]},
+                                      "hb_gap_max_ms": {"type": ["integer", "null"]}, "linkd_dry_run": {"type": ["boolean", "null"]},
+                                      "firmware": {"type": ["string", "null"]}, "reset_reason": {"type": ["string", "null"]}}},
+        "battery": {"type": "object", "required": ["voltage_v", "voltage_reason", "percent", "percent_reason", "under_load", "low", "simulated"],
+                    "properties": {"voltage_v": {"type": ["number", "null"]}, "voltage_reason": {"type": ["string", "null"]},
+                                   "basis": {"type": "string"}, "age_ms": {"type": ["integer", "null"]},
+                                   "under_load": {"type": "boolean"}, "percent": {"type": "null"},
+                                   "percent_reason": {"type": "string"}, "low": {"type": ["boolean", "null"]},
+                                   "low_threshold_v": {"type": ["number", "null"]}, "low_basis": {"type": "string"},
+                                   "simulated": {"type": "boolean"}}},
+        "motion": {"type": "object", "required": ["state", "direction", "basis", "owner", "outputs", "drive_allowed", "drive_block"],
+                   "properties": {"state": {"enum": ["stopped", "moving", "stopping"]},
+                                  "direction": {"enum": ["F", "B", "L", "R", null]}, "basis": {"enum": ["commanded"]},
+                                  "owner": {"type": ["object", "null"]}, "outputs": {"enum": ["enabled", "disabled_bench"]},
+                                  "drive_allowed": {"type": "boolean"}, "drive_block": {"type": ["string", "null"]},
+                                  "drive_block_message": {"type": ["string", "null"]}, "last_stop": {"type": ["object", "null"]}}},
+        "task": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/task"}]},
+        "fault": {"type": "object", "required": ["active", "last_off_forced"],
+                  "properties": {"active": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/fault"}]}, "last_off_forced": {"type": "boolean"}}},
+        "power": {"type": "object", "required": ["plug", "shutting_down"],
+                  "properties": {"plug": {"type": ["boolean", "null"]}, "shutting_down": {"type": ["string", "null"]},
+                                 "motor_rail_on": {"type": ["boolean", "null"]}, "motor_rail_v": {"type": ["number", "null"]}}},
+        "face": {"type": "object", "required": ["state", "adapter"],
+                 "properties": {"state": {"enum": ["idle", "listening", "moving", "happy", "puzzled", "low_energy", "sleepy", "fault"]},
+                                "adapter": {"type": "string"}, "adapter_reason": {"type": ["string", "null"]}}},
+        "peripherals": {"type": "object", "required": ["camera", "audio", "ble", "sonar"],
+                        "properties": {"camera": {"$ref": "#/$defs/peripheral"}, "audio": {"$ref": "#/$defs/peripheral"},
+                                       "ble": {"$ref": "#/$defs/peripheral"}, "sonar": {"$ref": "#/$defs/peripheral"}}},
+        "network": {"type": "object", "required": ["trust"], "properties": {"trust": {"enum": ["shared", "private"]}}},
+        "not_measured": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "command": {
+      "type": "object", "required": ["v", "type", "id", "name", "args"],
+      "properties": {"v": {"enum": [1]}, "type": {"enum": ["command"]}, "id": {"type": "string"},
+                     "name": {"enum": ["stop", "drive.claim", "drive.hold", "drive.release", "task.start", "task.cancel", "fault.rearm", "state.get", "capabilities.get"]},
+                     "args": {"type": "object"}}
+    },
+    "ack": {
+      "type": "object", "required": ["v", "type", "id", "ok", "code", "message", "result"],
+      "properties": {"v": {"enum": [1]}, "type": {"enum": ["ack"]}, "id": {"type": ["string", "null"]},
+                     "ok": {"type": "boolean"}, "code": {"type": ["string", "null"]}, "message": {"type": "string"},
+                     "result": {"type": "object"}}
+    },
+    "event": {
+      "type": "object", "required": ["v", "type", "event"],
+      "properties": {"v": {"enum": [1]}, "type": {"enum": ["event"]},
+                     "event": {"type": "object", "required": ["kind"], "properties": {"kind": {"type": "string"}}}}
+    },
+    "state_message": {
+      "type": "object", "required": ["v", "type", "state"],
+      "properties": {"v": {"enum": [1]}, "type": {"enum": ["state"]}, "state": {"$ref": "#/$defs/state"}}
+    },
+    "capabilities": {
+      "type": "object", "required": ["api_version", "commands", "drive", "tasks", "battery", "camera", "ble", "staleness", "not_measured"],
+      "properties": {
+        "api_version": {"enum": [1]}, "commands": {"type": "array", "items": {"type": "string"}},
+        "drive": {"type": "object", "required": ["directions", "speed_levels_pct", "hold_lease_ms", "hold_interval_ms"]},
+        "tasks": {"type": "array", "items": {"type": "object", "required": ["action", "title", "detail", "symbol", "uses_motion", "available"]}},
+        "battery": {"type": "object", "required": ["voltage", "percent"], "properties": {"percent": {"enum": [false]}}},
+        "camera": {"type": "object"}, "ble": {"type": "object"}, "staleness": {"type": "object"},
+        "not_measured": {"type": "array"}
+      }
+    }
+  }
+}

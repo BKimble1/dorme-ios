@@ -1,0 +1,126 @@
+{
+  "battery": {
+    "age_ms": 16,
+    "basis": "INA219 bus voltage at the logic rail",
+    "low": null,
+    "low_basis": "simulated threshold",
+    "low_threshold_v": 9.0,
+    "percent": null,
+    "percent_reason": "Not calibrated. Needs the discharge log (bench test B22).",
+    "simulated": true,
+    "under_load": true,
+    "voltage_reason": null,
+    "voltage_v": 9.6
+  },
+  "connection": {
+    "esp32": "up",
+    "esp_state": "FAULT",
+    "firmware": null,
+    "hb_gap_max_ms": 95,
+    "linkd_dry_run": null,
+    "reset_reason": null,
+    "stat_age_ms": 16
+  },
+  "face": {
+    "adapter": "simulated",
+    "adapter_reason": "Simulator writes to its own folder, not a display.",
+    "state": "fault"
+  },
+  "fault": {
+    "active": {
+      "code": "JAM",
+      "detail": "Sonar range did not change while driving straight.",
+      "rearm": "phone_or_voice",
+      "title": "Possible jam"
+    },
+    "last_off_forced": false
+  },
+  "motion": {
+    "basis": "commanded",
+    "direction": null,
+    "drive_allowed": false,
+    "drive_block": "FAULT",
+    "drive_block_message": "A fault is latched. Clear it first.",
+    "last_stop": {
+      "at": 1795602147.9874213,
+      "reached_controller": true,
+      "source": "app"
+    },
+    "outputs": "enabled",
+    "owner": null,
+    "state": "stopped"
+  },
+  "network": {
+    "trust": "private"
+  },
+  "not_measured": [
+    "current",
+    "runtime",
+    "temperature",
+    "motor_rpm",
+    "charging_status",
+    "wheel_speed"
+  ],
+  "peripherals": {
+    "audio": {
+      "playback": "not_connected",
+      "reason": "The simulator has no audio device.",
+      "status": "unavailable"
+    },
+    "ble": {
+      "reason": "The simulator does not advertise over Bluetooth.",
+      "status": "unavailable"
+    },
+    "camera": {
+      "orientation": "portrait",
+      "reason": "Synthetic test frames. No real camera.",
+      "rotation_deg": null,
+      "rotation_verified": false,
+      "status": "simulated",
+      "stream_path": "/api/v1/camera/stream.mjpg"
+    },
+    "sonar": {
+      "distance_cm": 120,
+      "reason": null,
+      "status": "simulated"
+    }
+  },
+  "power": {
+    "motor_rail_on": false,
+    "motor_rail_v": 0.3,
+    "plug": false,
+    "shutting_down": null
+  },
+  "robot": {
+    "api": 1,
+    "backend": "frames",
+    "bench_mode": false,
+    "mode": "simulator",
+    "name": "DORM-E",
+    "simulated": true,
+    "software": "0.1.0"
+  },
+  "seq": 14,
+  "task": {
+    "action": "self_check",
+    "bench": false,
+    "created_at": 1795602147.987,
+    "elapsed_ms": null,
+    "ended_at": 1795602149.183,
+    "error": {
+      "code": "CANCELLED",
+      "message": "Cancelled (app)"
+    },
+    "id": "t-02147-883d",
+    "progress": 0.333,
+    "result": {},
+    "source": {
+      "id": "phone-1",
+      "kind": "app"
+    },
+    "state": "cancelled",
+    "step": "Cancelled",
+    "title": "Self check",
+    "uses_motion": false
+  }
+}

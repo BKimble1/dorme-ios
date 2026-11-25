@@ -1,0 +1,51 @@
+# XcodeGen spec for the DORM-E iPhone app. On a Mac:  brew install xcodegen && xcodegen && open DORME.xcodeproj
+# NOT YET GENERATED OR COMPILED: written on Windows, where Xcode does not exist.
+name: DORME
+options:
+  bundleIdPrefix: local.dorme          # change to your own reverse-DNS prefix before signing
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  DORMEKit:
+    path: DORMEKit
+targets:
+  DORME:
+    type: application
+    platform: iOS
+    sources:
+      - path: DORME
+    dependencies:
+      - package: DORMEKit
+    info:
+      path: DORME/Info.plist
+      properties:
+        CFBundleDisplayName: DORM-E
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)   # CI sets it to the GitHub run number for TestFlight
+        ITSAppUsesNonExemptEncryption: false          # export compliance: plain HTTP on the LAN, no own crypto
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSBluetoothAlwaysUsageDescription: DORM-E uses Bluetooth to find your robot nearby, read its basic status and send Stop.
+        NSLocalNetworkUsageDescription: DORM-E connects to your robot on your local Wi-Fi network.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.dorme.app   # CI overrides with the repo variable BUNDLE_ID
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""            # set your Apple developer team to run on a phone
+schemes:
+  DORME:
+    build:
+      targets:
+        DORME: all
+    run:
+      config: Debug
