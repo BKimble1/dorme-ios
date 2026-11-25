@@ -29,9 +29,19 @@ targets:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSBluetoothAlwaysUsageDescription: DORM-E uses Bluetooth to find your robot nearby, read its basic status and send Stop.
-        NSLocalNetworkUsageDescription: DORM-E connects to your robot on your local Wi-Fi network.
+        NSLocalNetworkUsageDescription: DORM-E finds and connects to your robot on your Wi-Fi.
+        NSBonjourServices: [_dorme._tcp]
+        NSCameraUsageDescription: DORM-E scans the pairing code shown on your robot's screen.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+          # Remote access through Tailscale: its 100.64.0.0/10 addresses and *.ts.net names (plain HTTP inside the
+          # encrypted tailnet).
+          NSExceptionDomains:
+            ts.net:
+              NSIncludesSubdomains: true
+              NSExceptionAllowsInsecureHTTPLoads: true
+            100.64.0.0/10:
+              NSExceptionAllowsInsecureHTTPLoads: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: local.dorme.app   # CI overrides with the repo variable BUNDLE_ID

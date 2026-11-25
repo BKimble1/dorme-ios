@@ -35,7 +35,43 @@ final class NetworkRobotClient: RobotClient {
         self.token = Keychain.read(account: "\(host):\(port)")
     }
 
-    private var base: URL { URL(string: "http://\(host):\(port)")! }
+    private var base: URL { URL(string: Self.origin(host: host, port: port, scheme: "http"))! }
+
+    /// http://host:port, bracketing IPv6 literals.
+    static func origin(host: String, port: Int, scheme: String) -> String {
+        let h = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+        return "\(scheme)://\(h):\(port)"
+    }
+
+    /// Quick check that a DORM-E answers at host:port (used to pick among discovered/remembered addresses).
+    static func probe(host: String, port: Int, timeout: Double = 3) async -> Bool {
+        guard let url = URL(string: origin(host: host, port: port, scheme: "http") + "/api/v1/info") else { return false }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = timeout
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = timeout
+        guard let (data, response) = try? await URLSession(configuration: config).data(for: req),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return obj["name"] as? String == "DORM-E"
+    }
+
+    /// Authenticated GET decoded with the shared decoder; nil on any failure.
+    func getJSON<T: Decodable>(_ path: String, as type: T.Type, timeout: Double = 10) async -> T? {
+        guard let (data, response) = try? await session.data(for: request(path, timeout: timeout)),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return try? DORMEJSON.decoder.decode(T.self, from: data)
+    }
+
+    /// Authenticated POST answered with an ack.
+    func post(_ path: String, body: [String: Any] = [:], timeout: Double = 15) async -> Ack {
+        do {
+            let (data, _) = try await session.data(for: request(path, method: "POST", body: body, timeout: timeout))
+            return try DORMEJSON.decoder.decode(Ack.self, from: data)
+        } catch {
+            return .failure(nil, "OFFLINE", "Can't reach the robot.")
+        }
+    }
 
     private func request(_ path: String, method: String = "GET", body: [String: Any]? = nil, timeout: Double = 5) -> URLRequest {
         var req = URLRequest(url: base.appendingPathComponent(path))
@@ -64,7 +100,7 @@ final class NetworkRobotClient: RobotClient {
         onEvent?(.phase(.connecting))
         struct Info: Decodable { var api: Int; var mode: String; var simulated: Bool; var paired: Bool }
         do {
-            let (data, response) = try await session.data(for: request("api/v1/info", timeout: 4))
+            let (data, response) = try await session.data(for: request("api/v1/info", timeout: 8))
             guard (response as? HTTPURLResponse)?.statusCode == 200 else {
                 onEvent?(.phase(.unavailable("\(host) answered, but not as a DORM-E robot.")))
                 return
@@ -76,7 +112,8 @@ final class NetworkRobotClient: RobotClient {
             }
             if !info.paired { token = nil }
         } catch {
-            onEvent?(.phase(.offline("Can't reach \(host). Check that the phone and robot are on the same network.")))
+            let code = (error as? URLError)?.code.rawValue
+            onEvent?(.phase(.offline("Can't reach \(host)\(code.map { " (\($0))" } ?? "")")))
             scheduleReconnect()
             return
         }
@@ -97,7 +134,7 @@ final class NetworkRobotClient: RobotClient {
     private func openSocket() {
         closeSocket(reason: nil)
         var req = request("api/v1/ws", timeout: 5)
-        req.url = URL(string: "ws://\(host):\(port)/api/v1/ws")
+        req.url = URL(string: Self.origin(host: host, port: port, scheme: "ws") + "/api/v1/ws")
         let task = session.webSocketTask(with: req)
         ws = task
         task.resume()

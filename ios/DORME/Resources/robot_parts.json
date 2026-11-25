@@ -1,0 +1,345 @@
+[
+ {
+  "id": "A01_chassis",
+  "name": "A01 lower chassis",
+  "category": "printed",
+  "node": "A01_chassis",
+  "path": "/DORME/Printed/A01_chassis"
+ },
+ {
+  "id": "A02_tray",
+  "name": "A02 electronics tray",
+  "category": "printed",
+  "node": "A02_tray",
+  "path": "/DORME/Printed/A02_tray"
+ },
+ {
+  "id": "A03_cover",
+  "name": "A03 rounded cover (v2 r1 candidate)",
+  "category": "printed",
+  "node": "A03_cover",
+  "path": "/DORME/Printed/A03_cover"
+ },
+ {
+  "id": "A04_bezel",
+  "name": "A04 screen bezel / Pi carrier",
+  "category": "printed",
+  "node": "A04_bezel",
+  "path": "/DORME/Printed/A04_bezel"
+ },
+ {
+  "id": "A05_hatch",
+  "name": "A05 battery hatch",
+  "category": "printed",
+  "node": "A05_hatch",
+  "path": "/DORME/Printed/A05_hatch"
+ },
+ {
+  "id": "A06_bar_left",
+  "name": "A06 left motor-retaining bar",
+  "category": "printed",
+  "node": "A06_bar_left",
+  "path": "/DORME/Printed/A06_bar_left"
+ },
+ {
+  "id": "A07_bar_right",
+  "name": "A07 right motor-retaining bar",
+  "category": "printed",
+  "node": "A07_bar_right",
+  "path": "/DORME/Printed/A07_bar_right"
+ },
+ {
+  "id": "PI4",
+  "name": "Raspberry Pi 4B (U6)",
+  "category": "electronics",
+  "node": "PI4",
+  "path": "/DORME/Electronics/PI4"
+ },
+ {
+  "id": "LCD",
+  "name": "MPI3501 3.5 in LCD (U11)",
+  "category": "electronics",
+  "node": "LCD",
+  "path": "/DORME/Electronics/LCD"
+ },
+ {
+  "id": "CAMERA",
+  "name": "OV5647 camera (U12)",
+  "category": "sensor",
+  "node": "CAMERA",
+  "path": "/DORME/Electronics/CAMERA"
+ },
+ {
+  "id": "CSI_RIBBON",
+  "name": "Camera CSI ribbon",
+  "category": "cable",
+  "node": "CSI_RIBBON",
+  "path": "/DORME/Electronics/CSI_RIBBON"
+ },
+ {
+  "id": "ESP32_U7",
+  "name": "ESP32 DevKit (U7)",
+  "category": "electronics",
+  "node": "ESP32_U7",
+  "path": "/DORME/Electronics/ESP32_U7"
+ },
+ {
+  "id": "DCB",
+  "name": "DORM-E control board (DCB rev A)",
+  "category": "electronics",
+  "node": "DCB",
+  "path": "/DORME/Electronics/DCB"
+ },
+ {
+  "id": "INA219_U9",
+  "name": "INA219 current monitor (U9)",
+  "category": "electronics",
+  "node": "INA219_U9",
+  "path": "/DORME/Electronics/INA219_U9"
+ },
+ {
+  "id": "SONAR",
+  "name": "HC-SR04 sonar (U8)",
+  "category": "sensor",
+  "node": "SONAR",
+  "path": "/DORME/Electronics/SONAR"
+ },
+ {
+  "id": "AUDIO_U16",
+  "name": "USB audio module with mics (U16)",
+  "category": "electronics",
+  "node": "AUDIO_U16",
+  "path": "/DORME/Electronics/AUDIO_U16"
+ },
+ {
+  "id": "SPEAKER",
+  "name": "Speaker (LS1)",
+  "category": "io",
+  "node": "SPEAKER",
+  "path": "/DORME/Electronics/SPEAKER"
+ },
+ {
+  "id": "FAN",
+  "name": "40 mm fan (FAN1)",
+  "category": "io",
+  "node": "FAN",
+  "path": "/DORME/Electronics/FAN"
+ },
+ {
+  "id": "FAN_CTRL",
+  "name": "Fan speed controller (FAN1)",
+  "category": "io",
+  "node": "FAN_CTRL",
+  "path": "/DORME/Electronics/FAN_CTRL"
+ },
+ {
+  "id": "MD20A_U4",
+  "name": "MD20A motor driver, left (U4)",
+  "category": "electronics",
+  "node": "MD20A_U4",
+  "path": "/DORME/Drive/MD20A_U4"
+ },
+ {
+  "id": "MD20A_U5",
+  "name": "MD20A motor driver, right (U5)",
+  "category": "electronics",
+  "node": "MD20A_U5",
+  "path": "/DORME/Drive/MD20A_U5"
+ },
+ {
+  "id": "M1",
+  "name": "Motor M1 (rear left)",
+  "category": "motor",
+  "node": "M1",
+  "path": "/DORME/Drive/M1"
+ },
+ {
+  "id": "M2",
+  "name": "Motor M2 (front left)",
+  "category": "motor",
+  "node": "M2",
+  "path": "/DORME/Drive/M2"
+ },
+ {
+  "id": "M3",
+  "name": "Motor M3 (rear right)",
+  "category": "motor",
+  "node": "M3",
+  "path": "/DORME/Drive/M3"
+ },
+ {
+  "id": "M4",
+  "name": "Motor M4 (front right)",
+  "category": "motor",
+  "node": "M4",
+  "path": "/DORME/Drive/M4"
+ },
+ {
+  "id": "W1",
+  "name": "Wheel W1 (rear left)",
+  "category": "wheel",
+  "node": "W1",
+  "path": "/DORME/Drive/W1"
+ },
+ {
+  "id": "W2",
+  "name": "Wheel W2 (front left)",
+  "category": "wheel",
+  "node": "W2",
+  "path": "/DORME/Drive/W2"
+ },
+ {
+  "id": "W3",
+  "name": "Wheel W3 (rear right)",
+  "category": "wheel",
+  "node": "W3",
+  "path": "/DORME/Drive/W3"
+ },
+ {
+  "id": "W4",
+  "name": "Wheel W4 (front right)",
+  "category": "wheel",
+  "node": "W4",
+  "path": "/DORME/Drive/W4"
+ },
+ {
+  "id": "BATTERY",
+  "name": "Battery pack (B1, two sticks)",
+  "category": "power",
+  "node": "BATTERY",
+  "path": "/DORME/Power/BATTERY"
+ },
+ {
+  "id": "J1_BATT",
+  "name": "Battery connector, mini Tamiya (J1)",
+  "category": "power",
+  "node": "J1_BATT",
+  "path": "/DORME/Power/J1_BATT"
+ },
+ {
+  "id": "U1",
+  "name": "5 V regulator for Pi and AUX (U1)",
+  "category": "power",
+  "node": "U1",
+  "path": "/DORME/Power/U1"
+ },
+ {
+  "id": "XL4005_U2",
+  "name": "XL4005 6.3 V motor rail, left (U2)",
+  "category": "power",
+  "node": "XL4005_U2",
+  "path": "/DORME/Power/XL4005_U2"
+ },
+ {
+  "id": "XL4005_U3",
+  "name": "XL4005 6.3 V motor rail, right (U3)",
+  "category": "power",
+  "node": "XL4005_U3",
+  "path": "/DORME/Power/XL4005_U3"
+ },
+ {
+  "id": "U14",
+  "name": "Pololu 2815 operating switch (U14)",
+  "category": "power",
+  "node": "U14",
+  "path": "/DORME/Power/U14"
+ },
+ {
+  "id": "U15",
+  "name": "Pololu 2815 motor switch (U15)",
+  "category": "power",
+  "node": "U15",
+  "path": "/DORME/Power/U15"
+ },
+ {
+  "id": "FUSE_F0",
+  "name": "Main fuse holder (F0)",
+  "category": "power",
+  "node": "FUSE_F0",
+  "path": "/DORME/Power/FUSE_F0"
+ },
+ {
+  "id": "FUSE_F1",
+  "name": "Logic fuse holder (F1)",
+  "category": "power",
+  "node": "FUSE_F1",
+  "path": "/DORME/Power/FUSE_F1"
+ },
+ {
+  "id": "FUSE_F2",
+  "name": "Left motor fuse holder (F2)",
+  "category": "power",
+  "node": "FUSE_F2",
+  "path": "/DORME/Power/FUSE_F2"
+ },
+ {
+  "id": "FUSE_F3",
+  "name": "Right motor fuse holder (F3)",
+  "category": "power",
+  "node": "FUSE_F3",
+  "path": "/DORME/Power/FUSE_F3"
+ },
+ {
+  "id": "FUSE_F4",
+  "name": "Charge fuse holder (F4)",
+  "category": "power",
+  "node": "FUSE_F4",
+  "path": "/DORME/Power/FUSE_F4"
+ },
+ {
+  "id": "K2_RELAY",
+  "name": "Charge relay G5V-1 (K2)",
+  "category": "power",
+  "node": "K2_RELAY",
+  "path": "/DORME/Power/K2_RELAY"
+ },
+ {
+  "id": "TH1",
+  "name": "Battery thermal switch KSD9700 (TH1)",
+  "category": "power",
+  "node": "TH1",
+  "path": "/DORME/Power/TH1"
+ },
+ {
+  "id": "STAR",
+  "name": "Star return terminals",
+  "category": "power",
+  "node": "STAR",
+  "path": "/DORME/Power/STAR"
+ },
+ {
+  "id": "MOTOR_RAIL_PARTS",
+  "name": "Motor-rail capacitors, TVS diodes, resistors (C5, C6, D1, D2, R1, R2)",
+  "category": "power",
+  "node": "MOTOR_RAIL_PARTS",
+  "path": "/DORME/Power/MOTOR_RAIL_PARTS"
+ },
+ {
+  "id": "J_CHG",
+  "name": "Charge socket (J_CHG)",
+  "category": "io",
+  "node": "J_CHG",
+  "path": "/DORME/Power/J_CHG"
+ },
+ {
+  "id": "S2_SWITCH",
+  "name": "On/off button (S2)",
+  "category": "io",
+  "node": "S2_SWITCH",
+  "path": "/DORME/Power/S2_SWITCH"
+ },
+ {
+  "id": "PLUGS",
+  "name": "Cable plugs and connector housings",
+  "category": "hardware",
+  "node": "PLUGS",
+  "path": "/DORME/Hardware/PLUGS"
+ },
+ {
+  "id": "FASTENERS",
+  "name": "Screws, nuts, washers and spacers (J01-J13)",
+  "category": "hardware",
+  "node": "FASTENERS",
+  "path": "/DORME/Hardware/FASTENERS"
+ }
+]

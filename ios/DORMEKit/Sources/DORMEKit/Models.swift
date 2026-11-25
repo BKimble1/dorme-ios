@@ -81,6 +81,7 @@ public struct RobotState: Codable, Equatable, Sendable {
     public var face: FaceInfo
     public var peripherals: Peripherals
     public var network: NetworkInfo
+    public var health: HealthSummary? = nil
     public var notMeasured: [String]
 }
 
@@ -249,6 +250,106 @@ public struct Peripherals: Codable, Equatable, Sendable {
 
 public struct NetworkInfo: Codable, Equatable, Sendable {
     public var trust: String
+    public var wifiSsid: String?
+    public var wifiDbm: Int?
+    public var ipv4: [String]?
+    public var ethernetIpv4: [String]?
+    public var remote: RemoteInfo?
+
+    public init(trust: String, wifiSsid: String? = nil, wifiDbm: Int? = nil, ipv4: [String]? = nil,
+                ethernetIpv4: [String]? = nil, remote: RemoteInfo? = nil) {
+        self.trust = trust; self.wifiSsid = wifiSsid; self.wifiDbm = wifiDbm; self.ipv4 = ipv4
+        self.ethernetIpv4 = ethernetIpv4; self.remote = remote
+    }
+}
+
+public struct RemoteInfo: Codable, Equatable, Sendable {
+    public var online: Bool
+    public var name: String?
+    public var ips: [String]?
+    public init(online: Bool, name: String? = nil, ips: [String]? = nil) { self.online = online; self.name = name; self.ips = ips }
+}
+
+// MARK: - Health (robot's per-part view, 2026-11-25)
+
+/// Status of one part: ok, warn, fault, off (not connected / switched off), none (no sensor).
+public struct PartHealth: Codable, Equatable, Sendable {
+    public var s: String
+    public var t: String
+    public init(s: String, t: String) { self.s = s; self.t = t }
+}
+
+public struct HealthIssue: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var status: String
+    public var text: String
+    public init(id: String, status: String, text: String) { self.id = id; self.status = status; self.text = text }
+}
+
+public struct HealthSummary: Codable, Equatable, Sendable {
+    public var overall: String          // ok, warn, fault
+    public var headline: String
+    public var issues: [HealthIssue]
+    /// Keys are part ids. The decoder's snake_case conversion rewrites them (ESP32_U7 -> ESP32U7),
+    /// so always look parts up through `part(_:)`, which compares normalised ids.
+    public var parts: [String: PartHealth]
+
+    public init(overall: String, headline: String, issues: [HealthIssue], parts: [String: PartHealth]) {
+        self.overall = overall; self.headline = headline; self.issues = issues; self.parts = parts
+    }
+
+    public func part(_ id: String) -> PartHealth? {
+        if let p = parts[id] { return p }
+        let key = PartKey.norm(id)
+        return parts.first { PartKey.norm($0.key) == key }?.value
+    }
+}
+
+public enum PartKey {
+    /// "ESP32_U7", "ESP32U7", "esp32_u7" all compare equal.
+    public static func norm(_ id: String) -> String { id.replacingOccurrences(of: "_", with: "").lowercased() }
+}
+
+/// GET /api/v1/system
+public struct SystemReport: Codable, Equatable, Sendable {
+    public var parts: [PartDetail]
+    public var vitals: [String: JSONValue]
+    public var network: NetworkInfo
+}
+
+public struct PartDetail: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var status: String
+    public var text: String
+    public var values: [String: JSONValue]
+}
+
+/// GET /api/v1/network/wifi
+public struct WifiStatus: Codable, Equatable, Sendable {
+    public var connection: String?
+    public var ssid: String?
+    public var signal: Int?
+    public var ipv4: [String]?
+    public var saved: [SavedNetwork]?
+}
+
+public struct SavedNetwork: Codable, Equatable, Sendable, Identifiable {
+    public var id: String { name }
+    public var name: String
+    public var ssid: String
+    public var priority: Int?
+}
+
+/// GET /api/v1/network/wifi/scan
+public struct WifiScan: Codable, Equatable, Sendable {
+    public var networks: [VisibleNetwork]
+}
+
+public struct VisibleNetwork: Codable, Equatable, Sendable, Identifiable {
+    public var id: String { ssid }
+    public var ssid: String
+    public var signal: Int
+    public var security: String         // password, enterprise, open
 }
 
 // MARK: - Capabilities

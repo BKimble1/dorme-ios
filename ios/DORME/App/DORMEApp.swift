@@ -26,7 +26,6 @@ struct RootView: View {
                 case .home: HomeView()
                 case .control: ControlView()
                 case .tasks: TasksView()
-                case .robot: RobotView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -42,13 +41,13 @@ struct RootView: View {
         }
         .tint(Theme.ink)
         .preferredColorScheme(.light)
-        .sheet(isPresented: $store.showConnect) { ConnectView() }
         .sheet(isPresented: $store.showDemoControls) { DemoControlsView().presentationDetents([.medium, .large]) }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { store.backgrounded() }
+            if phase == .active && !store.isDemo && store.phase != .connected { store.autoConnect() }
         }
         .onAppear {
-            if !store.hasClient { store.showConnect = true }
+            if !store.hasClient { store.autoConnect() }
         }
     }
 }

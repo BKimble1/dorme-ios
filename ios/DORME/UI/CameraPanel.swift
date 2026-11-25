@@ -46,12 +46,9 @@ struct CameraPanel: View {
     }
 
     private func unavailable(_ reason: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "video.slash").font(.title).foregroundStyle(.white.opacity(0.7))
-            Text("Camera unavailable").font(.headline).foregroundStyle(.white)
-            Text(reason).font(.footnote).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.7))
-                .padding(.horizontal, 24)
-        }
+        // Black, as a camera with no picture looks. The reason is for VoiceOver only.
+        Image(systemName: "video.slash").font(.title2).foregroundStyle(.white.opacity(0.35))
+            .accessibilityLabel("No camera. \(reason)")
     }
 
     @ViewBuilder private var badges: some View {

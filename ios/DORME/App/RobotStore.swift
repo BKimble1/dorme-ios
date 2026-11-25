@@ -14,29 +14,36 @@ final class RobotStore {
     }
 
     enum Tab: String, CaseIterable, Identifiable {
-        case home, control, tasks, robot
+        case home, control, tasks
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .home: return "Home"
-            case .control: return "Control"
+            case .home: return "Robot"
+            case .control: return "Drive"
             case .tasks: return "Tasks"
-            case .robot: return "Robot"
             }
         }
         var symbol: String {
             switch self {
-            case .home: return "house"
+            case .home: return "cube.transparent"
             case .control: return "dpad"
             case .tasks: return "checklist"
-            case .robot: return "cpu"
             }
         }
     }
 
+    /// Where automatic connection stands (the home page shows it inline; there is no connect sheet).
+    enum ConnectState: Equatable { case idle, searching, notFound }
+
     var tab: Tab = .home
-    var showConnect = false
+    /// Kept for older call sites: asking for the connect screen now just goes to the home page.
+    var showConnect = false { didSet { if showConnect { tab = .home; showConnect = false } } }
     var showDemoControls = false
+    private(set) var connectState: ConnectState = .idle
+    private(set) var system: SystemReport?
+    private(set) var lastQR: PairingQR?
+    let discovery = Discovery()
+    let ble = BLEScanner()
 
     private(set) var client: RobotClient?
     private(set) var phase: ConnectionPhase = .idle
@@ -49,6 +56,7 @@ final class RobotStore {
     var toast: Toast?
 
     @ObservationIgnored private var drive: DriveSession?
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var clock: Task<Void, Never>?
     @ObservationIgnored let defaults = UserDefaults.standard
 
@@ -88,10 +96,111 @@ final class RobotStore {
     func connect(host: String, port: Int) {
         let h = host.trimmingCharacters(in: .whitespaces)
         guard !h.isEmpty else { return }
+        searchTask?.cancel()
+        connectState = .idle
         defaults.set(h, forKey: "robot.host")
         defaults.set(port, forKey: "robot.port")
         attach(NetworkRobotClient(host: h, port: port))
     }
+
+    /// Every address worth trying, best first: Bonjour on this network, the address typed last, the robot's
+    /// last Wi-Fi address, then its Tailscale name and address (reachable from anywhere once set up).
+    var candidateHosts: [String] {
+        var list = discovery.hosts
+        for key in ["robot.host", "robot.lanIP", "robot.remoteName", "robot.remoteIP"] {
+            if let h = defaults.string(forKey: key), !h.isEmpty { list.append(h) }
+        }
+        list.append("dorm-e.local")
+        var seen = Set<String>()
+        return list.filter { seen.insert($0).inserted }
+    }
+
+    /// Find the robot without asking: browse Bonjour and probe every remembered address for ~8 s.
+    func autoConnect() {
+        guard client == nil || phase != .connected else { return }
+        searchTask?.cancel()
+        connectState = .searching
+        discovery.start()
+        ble.start()
+        let port = savedPort
+        searchTask = Task { [weak self] in
+            var tried = Set<String>()
+            for _ in 0..<16 {
+                guard let self, !Task.isCancelled else { return }
+                for host in self.candidateHosts where !tried.contains(host) {
+                    tried.insert(host)
+                    if await NetworkRobotClient.probe(host: host, port: port, timeout: 3) {
+                        guard !Task.isCancelled else { return }
+                        self.connect(host: host, port: port)
+                        return
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+            if !Task.isCancelled { self?.connectState = .notFound }
+        }
+    }
+
+    func cancelSearch() {
+        searchTask?.cancel()
+        if connectState == .searching { connectState = .notFound }
+    }
+
+    /// Remember where the robot is, so it can be found again on another network.
+    private func remember(_ s: RobotState) {
+        if let ip = s.network.ipv4?.first { defaults.set(ip, forKey: "robot.lanIP") }
+        if let r = s.network.remote, r.online {
+            if let name = r.name { defaults.set(name, forKey: "robot.remoteName") }
+            if let ip = r.ips?.first { defaults.set(ip, forKey: "robot.remoteIP") }
+        }
+    }
+
+    // MARK: Robot system (V1 closed-robot operations)
+
+    func refreshSystem() async {
+        guard let network else { return }
+        if let report = await network.getJSON("api/v1/system", as: SystemReport.self) { system = report }
+    }
+
+    func wifiStatus() async -> WifiStatus? { await network?.getJSON("api/v1/network/wifi", as: WifiStatus.self) }
+    func wifiScan() async -> [VisibleNetwork] { await network?.getJSON("api/v1/network/wifi/scan", as: WifiScan.self, timeout: 30)?.networks ?? [] }
+
+    func addWifi(ssid: String, password: String, username: String?, domain: String?, joinNow: Bool) async -> Ack {
+        guard let network else { return .failure(nil, "OFFLINE") }
+        var body: [String: Any] = ["ssid": ssid, "connect": joinNow]
+        if let username, !username.isEmpty {
+            var eap: [String: Any] = ["identity": username, "password": password]
+            if let domain, !domain.isEmpty { eap["domain"] = domain }
+            body["eap"] = eap
+        } else if !password.isEmpty {
+            body["psk"] = password
+        }
+        return await network.post("api/v1/network/wifi", body: body, timeout: 30)
+    }
+
+    func forgetWifi(_ ssid: String) async -> Ack {
+        await network?.post("api/v1/network/wifi/forget", body: ["ssid": ssid]) ?? .failure(nil, "OFFLINE")
+    }
+
+    func enableRemote() async -> Ack {
+        await network?.post("api/v1/remote/enable", timeout: 45) ?? .failure(nil, "OFFLINE")
+    }
+
+    func restartService(_ unit: String) async -> Ack {
+        await network?.post("api/v1/system/restart", body: ["unit": unit]) ?? .failure(nil, "OFFLINE")
+    }
+
+    func power(_ action: String) async -> Ack {      // "reboot" or "poweroff"
+        await network?.post("api/v1/system/\(action)", body: ["confirm": true]) ?? .failure(nil, "OFFLINE")
+    }
+
+    /// Pair with a scanned QR: its 6 digits pair over Wi-Fi; the QR is kept for Bluetooth Wi-Fi setup.
+    func pair(qr: PairingQR) async -> Ack {
+        lastQR = qr
+        return await pair(pin: qr.code)
+    }
+
+    func rememberQR(_ qr: PairingQR) { lastQR = qr }
 
     func disconnect() {
         drive?.reset()
@@ -135,11 +244,13 @@ final class RobotStore {
         switch event {
         case .phase(let p):
             phase = p
+            if p == .connected { connectState = .idle }
             if p != .connected { drive?.reset() }        // a lost socket never keeps a hold going
             if case .offline(let why) = p { show(why, .warn) }
         case .state(let s, let at):
             state = s
             lastMessageAt = at
+            remember(s)
         case .capabilities(let c):
             capabilities = c
             drive?.setInterval(ms: c.drive.holdIntervalMs)

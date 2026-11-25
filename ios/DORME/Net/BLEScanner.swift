@@ -7,6 +7,8 @@ enum DormeBLE {
     static let statusChar = CBUUID(string: "6f1e0002-4c2b-4b7e-9d8a-d0a7e0b10001")
     static let setupChar = CBUUID(string: "6f1e0003-4c2b-4b7e-9d8a-d0a7e0b10001")
     static let commandChar = CBUUID(string: "6f1e0004-4c2b-4b7e-9d8a-d0a7e0b10001")
+    static let wifiChar = CBUUID(string: "6f1e0005-4c2b-4b7e-9d8a-d0a7e0b10001")
+    static let resultChar = CBUUID(string: "6f1e0006-4c2b-4b7e-9d8a-d0a7e0b10001")
 }
 
 /// Nearby discovery over Bluetooth LE: finds robots advertising the DORM-E service, reads their
@@ -26,17 +28,30 @@ final class BLEScanner {
         var addresses: [String] = []
         var port: Int?
         var canStop = false
+        var canSetUpWifi = false
+        var wifiName: String?
+        var wifiIP: String?
         var lastSeen = Date()
+    }
+
+    /// Outcome of a Bluetooth Wi-Fi setup, from the robot's result characteristic.
+    struct SetupResult: Equatable {
+        var ok: Bool?            // nil while joining
+        var message: String?
+        var ssid: String?
+        var ipv4: String?
     }
 
     private(set) var devices: [Nearby] = []
     private(set) var radio: String = "Not started"
     private(set) var lastMessage: String?
+    private(set) var results: [UUID: SetupResult] = [:]
 
     @ObservationIgnored private var central: CBCentralManager?
     @ObservationIgnored private var helper: Helper?
     @ObservationIgnored private var peripherals: [UUID: CBPeripheral] = [:]
     @ObservationIgnored private var commands: [UUID: CBCharacteristic] = [:]
+    @ObservationIgnored private var wifiChars: [UUID: CBCharacteristic] = [:]
     @ObservationIgnored private var wantScan = false
 
     func start() {
@@ -63,6 +78,32 @@ final class BLEScanner {
         }
         p.writeValue(Data("STOP".utf8), for: ch, type: .withResponse)
         lastMessage = "Stop sent over Bluetooth."
+    }
+
+    /// Ask the robot to show its pairing code and QR on its own screen.
+    func requestCode(_ id: UUID) {
+        guard let p = peripherals[id], let ch = commands[id] else { return }
+        p.writeValue(Data("CODE".utf8), for: ch, type: .withResponse)
+    }
+
+    /// Send sealed Wi-Fi details in framed chunks: byte 0 = index << 1 | last.
+    func sendWifi(_ id: UUID, sealed: Data) -> Bool {
+        guard let p = peripherals[id], let ch = wifiChars[id] else { return false }
+        let limit = max(20, min(180, p.maximumWriteValueLength(for: .withResponse) - 1))
+        var chunks: [Data] = []
+        var offset = 0
+        while offset < sealed.count {
+            let end = min(offset + limit, sealed.count)
+            chunks.append(sealed.subdata(in: offset..<end))
+            offset = end
+        }
+        for (i, chunk) in chunks.enumerated() {
+            var frame = Data([UInt8((i << 1) | (i == chunks.count - 1 ? 1 : 0))])
+            frame.append(chunk)
+            p.writeValue(frame, for: ch, type: .withResponse)
+        }
+        results[id] = SetupResult(ok: nil, message: "Sending")
+        return true
     }
 
     fileprivate func scanIfReady() {
@@ -101,6 +142,11 @@ final class BLEScanner {
             case DormeBLE.commandChar:
                 commands[p.identifier] = ch
                 if let i = devices.firstIndex(where: { $0.id == p.identifier }) { devices[i].canStop = true }
+            case DormeBLE.wifiChar:
+                wifiChars[p.identifier] = ch
+                if let i = devices.firstIndex(where: { $0.id == p.identifier }) { devices[i].canSetUpWifi = true }
+            case DormeBLE.resultChar:
+                if ch.properties.contains(.notify) { p.setNotifyValue(true, for: ch) }
             default: break
             }
         }
@@ -115,6 +161,12 @@ final class BLEScanner {
             devices[i].fault = obj["f"] as? String
             devices[i].simulated = (obj["sim"] as? Int) == 1
             if let n = obj["n"] as? String { devices[i].name = n }
+            devices[i].wifiName = obj["w"] as? String
+            devices[i].wifiIP = obj["ip"] as? String
+        } else if ch.uuid == DormeBLE.resultChar {
+            results[p.identifier] = SetupResult(ok: obj["ok"] as? Bool, message: obj["message"] as? String,
+                                                 ssid: obj["ssid"] as? String,
+                                                 ipv4: (obj["ipv4"] as? [String])?.first)
         } else if ch.uuid == DormeBLE.setupChar {
             devices[i].addresses = obj["addrs"] as? [String] ?? []
             devices[i].port = obj["port"] as? Int
@@ -144,7 +196,8 @@ final class BLEScanner {
 
         func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
             for s in peripheral.services ?? [] where s.uuid == DormeBLE.service {
-                peripheral.discoverCharacteristics([DormeBLE.statusChar, DormeBLE.setupChar, DormeBLE.commandChar], for: s)
+                peripheral.discoverCharacteristics([DormeBLE.statusChar, DormeBLE.setupChar, DormeBLE.commandChar,
+                                                    DormeBLE.wifiChar, DormeBLE.resultChar], for: s)
             }
         }
 

@@ -418,8 +418,43 @@ public final class DemoRobot: RobotClient {
                 ble: Peripheral(status: "unavailable", reason: "Demo does not use Bluetooth."),
                 sonar: Peripheral(status: controllerLinked ? "simulated" : "unavailable", reason: controllerLinked ? nil : "No fresh controller status.",
                                   distanceCm: controllerLinked ? 120 : nil)),
-            network: NetworkInfo(trust: "private"),
+            network: NetworkInfo(trust: "private", wifiSsid: "Demo Wi-Fi", wifiDbm: -52, ipv4: ["demo"],
+                                 remote: RemoteInfo(online: false)),
+            health: demoHealth(activeFault: activeFault),
             notMeasured: ["current", "runtime", "temperature", "motor_rpm", "charging_status", "wheel_speed"])
+    }
+
+    /// Per-part health in the same shape the real robot sends (pi/dorme_coord/health.py).
+    func demoHealth(activeFault: FaultInfo?) -> HealthSummary {
+        var parts: [String: PartHealth] = [
+            "PI4": PartHealth(s: "ok", t: "48°C"), "WIFI": PartHealth(s: "ok", t: "Demo Wi-Fi"),
+            "BLUETOOTH": PartHealth(s: "ok", t: "Simulated"), "REMOTE": PartHealth(s: "off", t: "Not set up"),
+            "ESP32_U7": PartHealth(s: controllerLinked ? "ok" : "fault", t: controllerLinked ? "Linked" : "Link lost"),
+            "INA219_U9": PartHealth(s: controllerLinked ? "ok" : "off", t: controllerLinked ? String(format: "%.2f V", voltage) : "No data"),
+            "BATTERY": PartHealth(s: lowBattery ? "warn" : "ok", t: String(format: "%.1f V", voltage)),
+            "U15": PartHealth(s: benchMode ? "off" : "ok", t: benchMode ? "Motor rail off" : "Motor rail on"),
+            "SONAR": PartHealth(s: controllerLinked ? "ok" : "off", t: controllerLinked ? "120 cm" : "No data"),
+            "LCD": PartHealth(s: "ok", t: "Face running"),
+            "CAMERA": PartHealth(s: cameraAvailable ? "ok" : "off", t: cameraAvailable ? "Simulated" : "Not connected"),
+            "AUDIO_U16": PartHealth(s: "off", t: "Not connected"),
+            "S2_SWITCH": PartHealth(s: "ok", t: "On"), "J_CHG": PartHealth(s: "ok", t: "Unplugged"),
+        ]
+        for id in ["M1", "M2", "M3", "M4", "MD20A_U4", "MD20A_U5", "XL4005_U2", "XL4005_U3", "FAN", "U1", "U14",
+                   "DCB", "SPEAKER", "TH1", "K2_RELAY", "FUSE_F0", "FUSE_F1", "FUSE_F2", "FUSE_F3", "FUSE_F4"] {
+            parts[id] = PartHealth(s: "none", t: "No sensor")
+        }
+        if let f = activeFault {
+            let target = f.code == "JAM" ? "M2" : "ESP32_U7"
+            parts[target] = PartHealth(s: f.code == "JAM" ? "warn" : "fault", t: f.title)
+        }
+        let issues = parts.filter { $0.value.s == "fault" || $0.value.s == "warn" }
+            .map { HealthIssue(id: $0.key, status: $0.value.s, text: $0.value.t) }
+            .sorted { a, b in
+                let ra = a.status == "fault" ? 0 : 1, rb = b.status == "fault" ? 0 : 1
+                return ra != rb ? ra < rb : a.id < b.id
+            }
+        let overall = issues.contains { $0.status == "fault" } ? "fault" : (issues.isEmpty ? "ok" : "warn")
+        return HealthSummary(overall: overall, headline: issues.first?.text ?? "Operational", issues: issues, parts: parts)
     }
 
     public func capabilities() -> Capabilities {
