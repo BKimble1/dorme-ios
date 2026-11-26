@@ -51,6 +51,25 @@ public struct RobotCommand: Sendable, Equatable {
         .init("screen.note", ["text": .string(text), "seconds": .number(Double(seconds))])
     }
 
+    /// Face style (classic, round, tall, wide, calm, happy) and eye colour [r, g, b], saved on the robot.
+    public static func screenFace(style: String, color: [Int]?) -> RobotCommand {
+        .init("screen.face", ["style": .string(style),
+                              "color": color.map { .array($0.map { .number(Double($0)) }) } ?? .null])
+    }
+
+    /// The owner's own screen. layers: [{"kind": "image", "file", "blink"} | {"kind": "text", ...}].
+    /// seconds 0 = until changed. startup: becomes the resting screen (also shown at power-on).
+    public static func screenShow(layers: [JSONValue], background: [Int] = [0, 0, 0], seconds: Int, startup: Bool,
+                                  label: String?) -> RobotCommand {
+        var args: [String: JSONValue] = ["layers": .array(layers), "bg": .array(background.map { .number(Double($0)) }),
+                                         "seconds": .number(Double(seconds)), "startup": .bool(startup)]
+        if let label { args["label"] = .string(label) }
+        return .init("screen.show", args)
+    }
+
+    /// Back to the face. startup: also forget the resting screen.
+    public static func screenClear(startup: Bool) -> RobotCommand { .init("screen.clear", ["startup": .bool(startup)]) }
+
     /// Wire form: {"v":1,"type":"command","id":..,"name":..,"args":{..}}. Keys are written as-is.
     public func wireData() throws -> Data {
         let envelope: [String: JSONValue] = ["v": .number(1), "type": .string("command"), "id": .string(id),
@@ -168,6 +187,7 @@ public enum ClientEvent: Sendable {
 
 public extension RobotClient {
     func showPairingCode() async -> Ack { .failure(nil, "UNAVAILABLE") }
+    func uploadScreenImage(_ png: Data) async -> Ack { .failure(nil, "UNAVAILABLE") }
 }
 
 /// One interface for the isolated demo and the real Wi-Fi robot. Everything the UI does goes
@@ -183,6 +203,8 @@ public protocol RobotClient: AnyObject {
     /// Ask the robot to draw a one-time pairing code on its own screen. The code is never sent to the app.
     func showPairingCode() async -> Ack
     func send(_ command: RobotCommand) async -> Ack
+    /// Upload a 480 x 320 PNG for the robot's screen (POST /api/v1/screen/image). result.file = its name.
+    func uploadScreenImage(_ png: Data) async -> Ack
     /// Stop uses the most direct path available and needs no pairing.
     func stop() async -> Ack
     func refreshTasks() async

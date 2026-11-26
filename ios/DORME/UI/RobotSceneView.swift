@@ -19,8 +19,18 @@ struct RobotSceneView: UIViewRepresentable {
     var note: ScreenNote? = nil
     /// Travel direction (F, B, L, R) while moving: the eyes look that way, as on the robot.
     var faceDirection: String? = nil
+    /// Saved face style/colour, alert dot and the owner's own screen (screen editor, 2026-11-26).
+    var look = LCDLook()
     var onTap: ((String) -> Void)?
     var onCoverTap: (() -> Void)?
+    /// Wiring view (2026-11-26): parts move apart in three layers (chassis, tray, head), the shells fade, and every
+    /// wire of the harness appears between the pins it connects (Resources/robot_wiring.json).
+    var schematic = false
+    /// In the wiring view: the selected part id or "wire:<id>" (its wires stay bright, the rest dim).
+    var focus: String? = nil
+    var onWireTap: ((String) -> Void)? = nil
+    /// A tap that hits nothing (closes the cover again, or clears the wiring selection).
+    var onEmptyTap: (() -> Void)? = nil
 
     /// Parts you can see on the closed robot; anything else is "inside".
     static let outside: Set<String> = ["a03cover", "a01chassis", "a04bezel", "a05hatch", "lcd", "w1", "w2", "w3", "w4",
@@ -154,6 +164,11 @@ struct RobotSceneView: UIViewRepresentable {
         private var faceSince = Date()
         private let animator = FaceAnimator()
         private var coverOpacity: CGFloat = 1
+        private var home: [String: SCNVector3] = [:]        // assembled positions, by PartKey
+        private var wiringNode: SCNNode?
+        private var exploded = false
+        private var cameraHome: (SCNVector3, SCNVector3)?
+        private var focusApplied: String?? = .none
 
         init(_ parent: RobotSceneView) { self.parent = parent }
 
@@ -209,7 +224,9 @@ struct RobotSceneView: UIViewRepresentable {
             screen.diffuse.contents = FaceRenderer.image(state: state, elapsed: now.timeIntervalSince(started) + 6,
                                                           stateElapsed: now.timeIntervalSince(faceSince), scale: 1.5,
                                                           note: parent.note, direction: parent.faceDirection,
-                                                          animator: animator)
+                                                          animator: animator, style: parent.look.style,
+                                                          color: parent.look.color, alert: parent.look.alert,
+                                                          custom: parent.look.custom, restingCustom: parent.look.restingCustom)
         }
 
         // MARK: Taps
@@ -227,8 +244,20 @@ struct RobotSceneView: UIViewRepresentable {
             guard let view else { return }
             let hits = view.hitTest(gesture.location(in: view),
                                     options: [.searchMode: SCNHitTestSearchMode.all.rawValue, .ignoreHiddenNodes: true])
+            if exploded {
+                // nearest thing under the finger: a wire (its fat invisible copy counts) or a part that is not faded
+                for h in hits {
+                    if let name = wireName(h.node) { parent.onWireTap?(name); return }
+                    guard let key = partKey(for: h.node) else { continue }
+                    if let info = Wiring.shared?.parts.first(where: { PartKey.norm($0.key) == key })?.value,
+                       info.hide || info.ghost { continue }
+                    if let id = PartCatalog.part(key)?.id { parent.onTap?(id); return }
+                }
+                parent.onEmptyTap?()
+                return
+            }
             let keys = hits.compactMap { partKey(for: $0.node) }.filter { $0 != "a03cover" || coverOpacity > 0 }
-            guard let first = keys.first else { return }
+            guard let first = keys.first else { parent.onEmptyTap?(); return }
             if first == "a03cover" {
                 if coverOpacity >= 0.99, let onCover = parent.onCoverTap { onCover(); return }
                 // see-through cover: pick what is behind it
@@ -239,9 +268,114 @@ struct RobotSceneView: UIViewRepresentable {
             if let id = PartCatalog.part(first)?.id { parent.onTap?(id) }
         }
 
+        private func wireName(_ node: SCNNode) -> String? {
+            var n: SCNNode? = node
+            while let c = n {
+                if let name = c.name, name.hasPrefix("wire:") { return String(name.dropFirst(5)) }
+                n = c.parent
+            }
+            return nil
+        }
+
+        // MARK: Wiring view
+
+        private func applySchematic() {
+            guard let view, let scene = view.scene, let wiring = Wiring.shared else { return }
+            let want = parent.schematic
+            guard want != exploded else { return }
+            exploded = want
+            let root = scene.rootNode
+            if home.isEmpty { for (k, n) in nodes { home[k] = n.position } }
+            if wiringNode == nil {
+                let w = WiringScene.build(wiring)
+                w.opacity = 0
+                w.isHidden = true
+                root.addChildNode(w)
+                wiringNode = w
+            }
+            SCNTransaction.begin()
+            SCNTransaction.animationDuration = want ? 0.9 : 0.6
+            SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            for (id, info) in wiring.parts {
+                let key = PartKey.norm(id)
+                guard let node = nodes[key], let base = home[key] else { continue }
+                if want {
+                    let o = SCNVector3(Float(info.offset[0]), Float(info.offset[1]), Float(info.offset[2]))
+                    let local = node.parent?.convertVector(o, from: root) ?? o
+                    node.position = base + local
+                    node.opacity = info.hide ? 0 : (info.ghost ? 0.12 : 1)
+                } else {
+                    node.position = base
+                    node.opacity = key == "a03cover" ? coverOpacity : 1
+                }
+            }
+            if let w = wiringNode {
+                if want { w.isHidden = false }
+                w.opacity = want ? 1 : 0
+            }
+            frameCamera(exploded: want)
+            SCNTransaction.commit()
+            if !want {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
+                    guard let self, !self.exploded else { return }
+                    self.wiringNode?.isHidden = true
+                }
+            }
+            focusApplied = .none
+        }
+
+        /// Pull the camera back (and up) so the taller exploded robot fits, keeping the angle the owner chose.
+        private func frameCamera(exploded: Bool) {
+            guard let view, let cam = view.pointOfView else { return }
+            let target = view.defaultCameraController.target
+            if exploded {
+                cameraHome = (cam.position, target)
+                let lift: Float = 0.085
+                let newTarget = SCNVector3(target.x, target.y + lift, target.z)
+                let d = SIMD3<Float>(cam.position.x - target.x, cam.position.y - target.y, cam.position.z - target.z)
+                let p = SIMD3<Float>(newTarget.x, newTarget.y, newTarget.z) + d * 1.55
+                cam.position = SCNVector3(p.x, p.y, p.z)
+                cam.look(at: newTarget)
+                view.defaultCameraController.target = newTarget
+            } else if let saved = cameraHome {
+                cam.position = saved.0
+                cam.look(at: saved.1)
+                view.defaultCameraController.target = saved.1
+            }
+        }
+
+        /// Selected part or wire bright, everything else in the wiring dimmed.
+        private func applyFocus() {
+            guard exploded, let wiringNode, focusApplied != .some(parent.focus) else { return }
+            focusApplied = .some(parent.focus)
+            let focus = parent.focus
+            var keep: Set<String> = []
+            if let f = focus {
+                if f.hasPrefix("wire:") { keep = [String(f.dropFirst(5))] }
+                else { keep = Set(Wiring.shared?.wires(of: f).map { $0.id } ?? []) }
+            }
+            SCNTransaction.begin()
+            SCNTransaction.animationDuration = 0.25
+            for child in wiringNode.childNodes {
+                guard let name = child.name, name.hasPrefix("wire:") else { continue }
+                let id = String(name.dropFirst(5))
+                child.opacity = focus == nil || keep.contains(id) ? 1 : 0.14
+                let glow = focus?.hasPrefix("wire:") == true && keep.contains(id)
+                child.enumerateHierarchy { n, _ in
+                    for m in n.geometry?.materials ?? [] where m.colorBufferWriteMask != [] {
+                        m.emission.contents = glow ? UIColor(red: 0.93, green: 0.47, blue: 0.22, alpha: 1) : UIColor.black
+                        m.emission.intensity = glow ? 0.6 : 0
+                    }
+                }
+            }
+            SCNTransaction.commit()
+        }
+
         // MARK: Status colours and the cover
 
         func apply() {
+            applySchematic()
+            applyFocus()
             let on = parent.face != nil
             if on != ledOn {
                 ledOn = on
@@ -265,7 +399,7 @@ struct RobotSceneView: UIViewRepresentable {
             let insideIssue = parent.statuses.contains { key, s in (s == "fault" || s == "warn") && !RobotSceneView.outside.contains(key) }
             let insideSelected = selected.map { !RobotSceneView.outside.contains($0) } ?? false
             let target: CGFloat = !parent.showCover ? 0 : ((insideIssue || insideSelected) ? 0.22 : 1)
-            if let cover = nodes["a03cover"], target != coverOpacity {
+            if let cover = nodes["a03cover"], target != coverOpacity, !exploded {
                 coverOpacity = target
                 SCNTransaction.begin()
                 SCNTransaction.animationDuration = 0.35

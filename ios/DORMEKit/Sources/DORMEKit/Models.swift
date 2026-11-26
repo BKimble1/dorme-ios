@@ -84,6 +84,32 @@ public struct RobotState: Codable, Equatable, Sendable {
     public var health: HealthSummary? = nil
     public var screen: ScreenInfo? = nil
     public var notMeasured: [String]
+    /// Raw controller readings for the wiring view (2026-11-26). nil when there is no fresh ESP32 status.
+    public var signals: Signals? = nil
+}
+
+/// The ESP32's latest status, as numbers (coordinator state "signals"). PWM is the duty the ESP32 commands
+/// (0-255); there is no wheel or motor speed sensor, so nothing here is a measured speed.
+public struct Signals: Codable, Equatable, Sendable {
+    public var pwmL: Int?
+    public var pwmR: Int?
+    public var dir: String?
+    public var motEn: JSONValue?
+    public var vbusV: Double?
+    public var vmotV: Double?
+    public var sonarCm: Int?
+    public var inputs: Int?
+    public var espState: String?
+    public var statHz: Int?
+    public var cameraClients: Int?
+    public init(pwmL: Int? = nil, pwmR: Int? = nil, dir: String? = nil, motEn: JSONValue? = nil, vbusV: Double? = nil,
+                vmotV: Double? = nil, sonarCm: Int? = nil, inputs: Int? = nil, espState: String? = nil, statHz: Int? = nil,
+                cameraClients: Int? = nil) {
+        self.pwmL = pwmL; self.pwmR = pwmR; self.dir = dir; self.motEn = motEn; self.vbusV = vbusV; self.vmotV = vmotV
+        self.sonarCm = sonarCm; self.inputs = inputs; self.espState = espState; self.statHz = statHz
+        self.cameraClients = cameraClients
+    }
+    public var motorsEnabled: Bool { motEn?.bool ?? ((motEn?.double ?? 0) != 0) }
 }
 
 /// Phones paired with the robot (GET /api/v1/pair/phones). Tokens never leave the robot.
@@ -98,10 +124,35 @@ public struct PairedPhones: Codable, Equatable, Sendable {
     public let bluetoothPairingOpen: Bool?
 }
 
-/// What the owner put on the robot's screen (command screen.note), 2026-11-26.
+/// What the owner put on the robot's screen (commands screen.note, screen.face, screen.show), 2026-11-26.
 public struct ScreenInfo: Codable, Equatable, Sendable {
     public var note: ScreenNote?
-    public init(note: ScreenNote?) { self.note = note }
+    /// Saved face style and eye colour (nil from a robot without the screen editor).
+    public var face: FaceSettings? = nil
+    public var styles: [String]? = nil
+    /// The owner's own screen showing for a while (until = unix s, nil = until changed).
+    public var custom: ScreenLabel? = nil
+    /// The owner's own screen used as the resting screen (also at power-on).
+    public var resting: ScreenLabel? = nil
+    /// "ok", or why the editor cannot save on this robot yet ("unavailable", "no_permission").
+    public var editor: String? = nil
+    public init(note: ScreenNote?, face: FaceSettings? = nil, styles: [String]? = nil, custom: ScreenLabel? = nil,
+                resting: ScreenLabel? = nil, editor: String? = nil) {
+        self.note = note; self.face = face; self.styles = styles; self.custom = custom; self.resting = resting
+        self.editor = editor
+    }
+}
+
+public struct FaceSettings: Codable, Equatable, Sendable {
+    public var style: String
+    public var color: [Int]?
+    public init(style: String, color: [Int]?) { self.style = style; self.color = color }
+}
+
+public struct ScreenLabel: Codable, Equatable, Sendable {
+    public var label: String?
+    public var until: Double?
+    public init(label: String?, until: Double? = nil) { self.label = label; self.until = until }
 }
 
 public struct ScreenNote: Codable, Equatable, Sendable {

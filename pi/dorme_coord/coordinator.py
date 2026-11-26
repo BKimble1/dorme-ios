@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import time
+from pathlib import Path
 
 from . import api
 from .api import ack
@@ -22,6 +23,7 @@ from .legacy import protocol as P
 from .motion import MotionArbiter
 from .tasks import TaskManager
 from . import health as H
+from .screen import ScreenStore, STYLES as SCREEN_STYLES, MAX_SECONDS as MAX_SCREEN_SECONDS, summary as screen_summary
 
 log = logging.getLogger("dorme-coord")
 
@@ -69,6 +71,11 @@ class Coordinator:
         self.rearm_waiters = []
         self.transient = None
         self.note = None            # {"text", "until" (unix s or None), "expires" (monotonic or None)}
+        # 2026-11-26 screen editor: saved face style/colour + resting screen, and a timed custom screen
+        sim = mode == "simulator"
+        self.screen_store = ScreenStore(Path(config["state_dir"]) / "face-settings" if sim else
+                                        config.get("face_settings_dir") or "/var/lib/dorme-face", create=sim)
+        self.custom = None          # {"content", "label", "until" (unix or None), "expires" (monotonic or None)}
         self.stopped_since = time.monotonic()
         self.state_seq = 0
         self.last_photo = None
@@ -428,6 +435,81 @@ class Coordinator:
             self.note = None
         return self.note
 
+    def custom_screen(self):
+        """The owner's timed screen while it lasts, else None."""
+        if self.custom and self.custom["expires"] is not None and time.monotonic() >= self.custom["expires"]:
+            self.custom = None
+        return self.custom
+
+    def face_alert(self):
+        """A fault the app explains: the face stays calm and adds a small amber dot."""
+        fault = self.esp_fault()
+        return bool(fault) and fault not in ("SONAR_FAIL", "LOW_BUS")
+
+    def screen_view(self):
+        st = self.screen_store.settings()
+        custom = self.custom_screen()
+        return {"note": ({"text": self.screen_note()["text"], "until": self.screen_note()["until"]}
+                         if self.screen_note() else None),
+                "face": st["face"], "styles": list(SCREEN_STYLES),
+                "custom": ({"label": custom["label"], "until": custom["until"]} if custom else None),
+                "resting": ({"label": st["resting"].get("label") or screen_summary(st["resting"])}
+                            if st["resting"] else None),
+                "editor": self.screen_store.status()["status"]}
+
+    async def _cmd_screen_face(self, cid, args, source):
+        if not self.screen_store.available():
+            return ack(cid, False, "UNAVAILABLE", message=self.screen_store.status()["reason"])
+        try:
+            face = self.screen_store.set_face(args.get("style", "classic"), args.get("color"))
+        except ValueError as exc:
+            return ack(cid, False, "BAD_REQUEST", message=str(exc))
+        self.emit_event("screen.face", face=face)
+        self.broadcast_state()
+        return ack(cid, True, result={"face": face})
+
+    async def _cmd_screen_show(self, cid, args, source):
+        if not self.screen_store.available():
+            return ack(cid, False, "UNAVAILABLE", message=self.screen_store.status()["reason"])
+        seconds = args.get("seconds", 0) or 0
+        startup = args.get("startup", False)
+        label = args.get("label")
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not 0 <= seconds <= MAX_SCREEN_SECONDS:
+            return ack(cid, False, "BAD_REQUEST", message="seconds: 0 (until changed) to 24 h.")
+        if not isinstance(startup, bool) or (label is not None and not isinstance(label, str)):
+            return ack(cid, False, "BAD_REQUEST", message="startup must be true or false, label a string.")
+        try:
+            content = self.screen_store.clean(args)
+        except ValueError as exc:
+            return ack(cid, False, "BAD_REQUEST", message=str(exc))
+        label = " ".join((label or "").split())[:40] or screen_summary(content)
+        self.note = None                     # the newest thing the owner put on the screen wins
+        if startup:
+            # the resting screen: shown now (the robot is idle), whenever it is idle, and from power-on
+            self.screen_store.set_resting(dict(content, label=label))
+            self.custom = None
+            result = {"resting": True, "label": label}
+        else:
+            until = time.time() + seconds if seconds else None
+            self.custom = {"content": content, "label": label, "until": until,
+                           "expires": time.monotonic() + seconds if seconds else None}
+            result = {"resting": False, "label": label, "until": until}
+        self.screen_store.gc()
+        self.emit_event("screen.show", **result)
+        self.broadcast_state()
+        return ack(cid, True, result=result)
+
+    async def _cmd_screen_clear(self, cid, args, source):
+        startup = args.get("startup", False)
+        if not isinstance(startup, bool):
+            return ack(cid, False, "BAD_REQUEST", message="startup must be true or false.")
+        self.custom = None
+        if startup and self.screen_store.available():
+            self.screen_store.set_resting(None)
+        self.emit_event("screen.clear", startup=startup)
+        self.broadcast_state()
+        return ack(cid, True, result={"cleared": True, "startup": startup})
+
     async def _cmd_screen_note(self, cid, args, source):
         text = args.get("text", "")
         seconds = args.get("seconds", 0) or 0
@@ -446,6 +528,7 @@ class Coordinator:
         until = time.time() + seconds if seconds else None
         expires = time.monotonic() + seconds + api.NOTE_DONE_SHOW_S if seconds else None
         self.note = {"text": text, "until": until, "expires": expires}
+        self.custom = None
         self.emit_event("screen.note", note={"text": text, "until": until})
         return ack(cid, True, result={"note": {"text": text, "until": until}})
 
@@ -480,11 +563,14 @@ class Coordinator:
             return self.transient[0]
         if self.screen_note():
             return "note"
+        if self.custom_screen():
+            return "screen"
         fault = self.esp_fault()
         if fault == "LOW_BUS":
             return "low_energy"
-        if fault and fault != "SONAR_FAIL":
-            return "fault"
+        # 2026-11-26 (owner): a fault no longer puts the red frown on. The resting face stays and face_alert()
+        # adds a small amber dot; the app says what is wrong. (Before this, a latched NOCUT on the bench board
+        # kept the frown on all the time.)
         if self.motors_on() or self.arbiter.owner:
             return "moving"
         if self.battery_view()["low"]:
@@ -524,9 +610,11 @@ class Coordinator:
                 note = self.screen_note() if name == "note" else None
                 s = self.esp["stat"] or {}
                 direction = {"FF": "F", "RR": "B", "RF": "L", "FR": "R"}.get(s.get("dir")) if name == "moving" else None
+                custom = self.custom_screen() if name == "screen" else None
                 self.face.set(name, direction=direction, code=self.pairing_code() if name == "pairing" else None,
                               qr=self.pairing[2] if name == "pairing" and self.pairing else None,
-                              note={"text": note["text"], "until": note["until"]} if note else None)
+                              note={"text": note["text"], "until": note["until"]} if note else None,
+                              screen=custom["content"] if custom else None, alert=self.face_alert())
                 state = self.state()
                 key = json.dumps({k: v for k, v in state.items() if k not in ("seq", "battery", "connection")},
                                  sort_keys=True, default=str)
@@ -618,8 +706,16 @@ class Coordinator:
                       "motor_rail_v": round(s["vmot_mv"] / 1000, 1) if fresh and s.get("vmot_mv", -1) > 0 else None},
             "face": {"state": self.compute_face(), "adapter": face_status["status"],
                      "adapter_reason": face_status["reason"]},
-            "screen": {"note": ({"text": self.screen_note()["text"], "until": self.screen_note()["until"]}
-                                if self.screen_note() else None)},
+            "screen": self.screen_view(),
+            # 2026-11-26: raw controller readings for the app's wiring view (what each part is doing). PWM is the
+            # commanded duty the ESP32 sends the MD20A drivers (0-255); there is no wheel speed sensor.
+            "signals": ({"pwm_l": s.get("pwm_l"), "pwm_r": s.get("pwm_r"), "dir": s.get("dir"),
+                         "mot_en": s.get("mot_en"), "vbus_v": round(s["vbus_mv"] / 1000, 2) if s.get("vbus_mv", -1) > 0 else None,
+                         "vmot_v": round(s["vmot_mv"] / 1000, 2) if s.get("vmot_mv", -1) > 0 else None,
+                         "sonar_cm": s.get("sonar_cm") if isinstance(s.get("sonar_cm"), int) and s["sonar_cm"] >= 0 else None,
+                         "inputs": s.get("inputs"), "esp_state": s.get("state"),
+                         "stat_hz": 10, "camera_clients": getattr(self.camera, "clients", None)}
+                        if fresh else None),
             "peripherals": {"camera": cam, "audio": self.audio.status(), "ble": self.ble.status(), "sonar": sonar},
             "network": self.network_view(),
             "health": self.health_view(),

@@ -8,6 +8,10 @@ import UIKit
 /// eye parameters; `FaceAnimator` eases between them, blinks at irregular intervals (Vector's blink curve) and
 /// glances around when idle. The eye outline is built exactly as in face.py (`eye_outline`), so the shapes match.
 /// The pairing code itself is never sent to the app; the pairing screen is drawn without digits.
+///
+/// Rev 3 (2026-11-26, screen editor): face styles (face.py STYLES) and the owner's eye colour; the owner's own screen
+/// (state "screen", or the resting screen while idle) is drawn from the picture this phone made, when it has it.
+/// A fault keeps the calm face and adds a small amber dot under the eyes, like the LCD.
 enum FaceRenderer {
     static let size = CGSize(width: 480, height: 320)
     static let eyeColor = UIColor(red: 215 / 255, green: 243 / 255, blue: 1, alpha: 1)
@@ -21,7 +25,7 @@ enum FaceRenderer {
         guard let s = coordinatorState else { return nil }
         switch s {
         case "idle", "listening", "moving", "happy", "puzzled", "low_energy", "sleepy", "fault", "pairing", "note",
-             "ack", "waking", "navigating": return s
+             "ack", "waking", "navigating", "screen": return s
         default: return "idle"
         }
     }
@@ -30,11 +34,45 @@ enum FaceRenderer {
 
     struct Eye {
         var w = 108.0, h = 150.0, lid = 0.0, tilt = 0.0, low = 0.0, smile = 0.0, dx = 0.0, dy = 0.0, s = 1.0, b = 1.0, warm = 0.0
+        var n = 3.6, gap = 112.0
 
         mutating func approach(_ t: Eye, _ k: Double) {
             w += (t.w - w) * k; h += (t.h - h) * k; lid += (t.lid - lid) * k; tilt += (t.tilt - tilt) * k
             low += (t.low - low) * k; smile += (t.smile - smile) * k; dx += (t.dx - dx) * k; dy += (t.dy - dy) * k
             s += (t.s - s) * k; b += (t.b - b) * k; warm += (t.warm - warm) * k
+            n += (t.n - n) * k; gap += (t.gap - gap) * k
+        }
+    }
+
+    // MARK: Styles (face.py STYLES): the owner picks one in the screen editor
+
+    struct Style {
+        let id: String, name: String
+        let w: Double, h: Double, n: Double, gap: Double
+        var lid = 0.0, smile = 0.0, tilt = 0.0
+    }
+
+    static let styles: [Style] = [
+        Style(id: "classic", name: "Classic", w: 108, h: 150, n: 3.6, gap: 112),
+        Style(id: "round", name: "Round", w: 118, h: 118, n: 2.0, gap: 112),
+        Style(id: "tall", name: "Tall", w: 76, h: 164, n: 2.4, gap: 92),
+        Style(id: "wide", name: "Wide", w: 148, h: 92, n: 4.4, gap: 124),
+        Style(id: "calm", name: "Calm", w: 108, h: 150, n: 3.6, gap: 112, lid: 0.34, tilt: -3),
+        Style(id: "happy", name: "Happy", w: 108, h: 150, n: 3.6, gap: 112, smile: 0.40),
+    ]
+
+    static func applyStyle(_ l: inout Eye, _ r: inout Eye, state: String, style: String?) {
+        let st = styles.first { $0.id == style } ?? styles[0]
+        let calm = ["idle", "waking", "listening", "ack"].contains(state)
+        for i in 0..<2 {
+            var e = i == 0 ? l : r
+            e.w *= st.w / 108; e.h *= st.h / 150; e.n = st.n; e.gap = st.gap
+            if calm {
+                if st.lid > 0 { e.lid = max(e.lid, st.lid) }
+                if st.smile > 0 { e.smile = max(e.smile, st.smile) }
+                if st.tilt != 0 && abs(e.tilt) < 0.5 { e.tilt = st.tilt }
+            }
+            if i == 0 { l = e } else { r = e }
         }
     }
 
@@ -110,7 +148,7 @@ enum FaceRenderer {
         let s = e.s * (1 + 0.06 * turn * side)
         let w = e.w * s * (1 + 0.18 * (1 - open))
         let h = max(5, e.h * s * open)
-        let cx = 240 + side * eyeGap * (1 - 0.05 * abs(turn)) + e.dx + gaze.0
+        let cx = 240 + side * e.gap * (1 - 0.05 * abs(turn)) + e.dx + gaze.0
         let cy = eyeY + e.dy + gaze.1
         return (cx, cy, w, h)
     }
@@ -125,7 +163,7 @@ enum FaceRenderer {
         for i in 0..<n {
             let x = g.cx + a * sin(-Double.pi / 2 + Double.pi * Double(i) / Double(n - 1))
             let u = min(1, abs(x - g.cx) / a)
-            let sq = b * pow(1 - pow(u, squircleN), 1 / squircleN)
+            let sq = b * pow(1 - pow(u, e.n), 1 / e.n)
             var top = g.cy - sq, bot = g.cy + sq
             if lids {
                 top = max(top, g.cy - b + e.lid * g.h + slope * (x - g.cx))
@@ -182,34 +220,67 @@ enum FaceRenderer {
 
     /// One frame. `elapsed`: seconds since the face started; `stateElapsed`: seconds in this state.
     /// `state == nil` is a dark screen (robot off or not connected). With an animator the look eases between frames.
+    /// `style`, `color`: the owner's face settings. `alert`: the amber dot. `custom`: the owner's screen as this phone
+    /// drew it (shown for state "screen", and instead of the eyes while idle when it is the resting screen).
     static func image(state: String?, elapsed: Double, stateElapsed: Double, scale: CGFloat = 2,
-                      note: ScreenNote? = nil, direction: String? = nil, animator: FaceAnimator? = nil) -> UIImage {
+                      note: ScreenNote? = nil, direction: String? = nil, animator: FaceAnimator? = nil,
+                      style: String? = nil, color eye: UIColor? = nil, alert: Bool = false,
+                      custom: CustomScreenFrame? = nil, restingCustom: Bool = false) -> UIImage {
         rgba8(size: size, scale: scale) { g in
             UIColor.black.setFill()
             g.fill(CGRect(origin: .zero, size: size))
             guard var state = lcdState(state) else { return }
+            var alert = alert
+            if state == "fault" { state = "idle"; alert = true }     // the robot keeps its calm face too
             if state == "pairing" { drawPairing(g); return }
             if state == "note" {
                 if let note, !note.text.isEmpty { drawNote(g, note, elapsed: elapsed); return }
                 state = "idle"
             }
+            if state == "screen" || ((state == "idle" || state == "waking") && restingCustom) {
+                if let custom {
+                    custom.draw(in: g, elapsed: elapsed)
+                    if alert { drawAlert(g, elapsed) }
+                    return
+                }
+                if state == "screen" {
+                    drawCaption(g, "Custom screen")
+                    return
+                }
+            }
             if state == "sleepy" && stateElapsed > 1.5 { return }
-            let l: Eye, r: Eye, gaze: (Double, Double), open: Double
+            var l: Eye, r: Eye, gaze: (Double, Double), open: Double
             if let animator {
-                (l, r, gaze, open) = animator.step(elapsed, state, stateElapsed, direction)
+                (l, r, gaze, open) = animator.step(elapsed, state, stateElapsed, direction, style: style)
             } else {
                 let x = expression(state, stateElapsed, direction)
                 (l, r, gaze) = (x.0, x.1, x.2)
+                applyStyle(&l, &r, state: state, style: style)
                 let b = elapsed.truncatingRemainder(dividingBy: 4.7)
                 open = (b < 0.22 && elapsed > 3 && state != "sleepy" && state != "waking") ? max(0.05, abs(b - 0.11) / 0.11) : 1
             }
-            drawEyes(g, l, r, gaze, open)
+            drawEyes(g, l, r, gaze, open, eye: eye ?? eyeColor)
+            if alert && state != "sleepy" { drawAlert(g, elapsed) }
         }
     }
 
-    private static func color(_ warm: Double, _ b: Double) -> (UIColor, UIColor) {
+    /// face.py _alert_dot: a small amber dot under the eyes that breathes slowly.
+    private static func drawAlert(_ g: CGContext, _ elapsed: Double) {
+        let level = 0.65 + 0.35 * (0.5 + 0.5 * sin(elapsed * 2 * .pi / 3))
+        UIColor(red: amber.r / 255, green: amber.g / 255, blue: amber.b / 255, alpha: CGFloat(level)).setFill()
+        g.fillEllipse(in: CGRect(x: 240 - 5, y: 320 - 22 - 5, width: 10, height: 10))
+    }
+
+    private static func drawCaption(_ g: CGContext, _ s: String) {
+        let font = UIFont.systemFont(ofSize: 26, weight: .medium)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textDim]
+        let w = (s as NSString).size(withAttributes: attrs).width
+        (s as NSString).draw(at: CGPoint(x: (480 - w) / 2, y: 145), withAttributes: attrs)
+    }
+
+    private static func color(_ warm: Double, _ b: Double, eye: UIColor = eyeColor) -> (UIColor, UIColor) {
         var r0: CGFloat = 0, g0: CGFloat = 0, b0: CGFloat = 0, a0: CGFloat = 0
-        eyeColor.getRed(&r0, green: &g0, blue: &b0, alpha: &a0)
+        eye.getRed(&r0, green: &g0, blue: &b0, alpha: &a0)
         let rr = mix(Double(r0) * 255, amber.r, warm) / 255, gg = mix(Double(g0) * 255, amber.g, warm) / 255
         let bb = mix(Double(b0) * 255, amber.b, warm) / 255
         let base = UIColor(red: rr * b * (1 - hotspot), green: gg * b * (1 - hotspot), blue: bb * b * (1 - hotspot), alpha: 1)
@@ -217,8 +288,9 @@ enum FaceRenderer {
         return (base, hot)
     }
 
-    private static func drawEyes(_ g: CGContext, _ l: Eye, _ r: Eye, _ gaze: (Double, Double), _ open: Double) {
-        let (base, hot) = color((l.warm + r.warm) / 2, 1)
+    static func drawEyes(_ g: CGContext, _ l: Eye, _ r: Eye, _ gaze: (Double, Double), _ open: Double,
+                         eye: UIColor = eyeColor) {
+        let (base, hot) = color((l.warm + r.warm) / 2, 1, eye: eye)
         for (e, side) in [(l, -1.0), (r, 1.0)] where e.b > 0.01 {
             let pts = outline(e, side: side, gaze: gaze, open: open)
             guard pts.count >= 3 else { continue }
@@ -360,9 +432,10 @@ final class FaceAnimator {
         return 1
     }
 
-    func step(_ t: Double, _ state: String, _ stateElapsed: Double, _ direction: String?)
+    func step(_ t: Double, _ state: String, _ stateElapsed: Double, _ direction: String?, style: String? = nil)
         -> (FaceRenderer.Eye, FaceRenderer.Eye, (Double, Double), Double) {
-        let (l, r, gazeGoal, flags) = FaceRenderer.expression(state, stateElapsed, direction)
+        var (l, r, gazeGoal, flags) = FaceRenderer.expression(state, stateElapsed, direction)
+        FaceRenderer.applyStyle(&l, &r, state: state, style: style)
         let dt = lastT.map { max(0, min(0.25, t - $0)) } ?? 0.066
         lastT = t
         if cur == nil { cur = (l, r) }
@@ -401,5 +474,27 @@ final class FaceAnimator {
         var a = cur!.0, b = cur!.1
         a.h *= breathe; b.h *= breathe
         return (a, b, gaze, open * dart)
+    }
+}
+
+
+/// The owner's screen as layers this phone drew (ScreenEditorView): a background colour and up to two pictures
+/// (drawing, text), each optionally blinking 65 % of each second, like face.py render_screen.
+struct CustomScreenFrame: Equatable {
+    var background: UIColor
+    var layers: [(image: UIImage, blink: Bool)]
+
+    static func == (a: CustomScreenFrame, b: CustomScreenFrame) -> Bool {
+        a.background == b.background && a.layers.count == b.layers.count
+            && zip(a.layers, b.layers).allSatisfy { $0.image === $1.image && $0.blink == $1.blink }
+    }
+
+    func draw(in g: CGContext, elapsed: Double) {
+        background.setFill()
+        g.fill(CGRect(origin: .zero, size: FaceRenderer.size))
+        let on = elapsed.truncatingRemainder(dividingBy: 1.0) < 0.65
+        for layer in layers where on || !layer.blink {
+            layer.image.draw(in: CGRect(origin: .zero, size: FaceRenderer.size))
+        }
     }
 }

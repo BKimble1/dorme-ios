@@ -9,6 +9,8 @@ struct HomeView: View {
     @State private var query = ""
     @State private var showCover = true
     @State private var showSettings = false
+    @State private var schematic = false
+    @State private var focus: String?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -57,23 +59,55 @@ struct HomeView: View {
         return Dictionary(parts.map { (PartKey.norm($0.key), $0.value.s) }, uniquingKeysWith: { a, _ in a })
     }
 
+    /// The 3D robot. Tap the cover to open it, tap empty space to close it again, tap a part to open it.
+    /// The button (bottom right) explodes it into the wiring view: tap a part or a wire there to see what it is doing.
     private var modelCard: some View {
         ZStack(alignment: .bottomTrailing) {
-            RobotSceneView(statuses: statuses, showCover: showCover, face: liveFace, note: store.state?.screen?.note,
-                           faceDirection: store.state?.motion.direction,
-                           onTap: { path.append($0) }, onCoverTap: { showCover = false })
-                .frame(height: 340)
-            Button { showCover.toggle() } label: {
-                Image(systemName: showCover ? "cube.transparent.fill" : "cube.transparent")
-                    .font(.body.weight(.semibold))
-                    .padding(10)
-                    .background(.ultraThinMaterial, in: Circle())
+            RobotSceneView(statuses: statuses, selected: schematic && focus?.hasPrefix("wire:") == false ? focus : nil,
+                           showCover: showCover, face: liveFace, note: store.state?.screen?.note,
+                           faceDirection: store.state?.motion.direction, look: store.lcdLook,
+                           onTap: { id in
+                               if schematic { withAnimation(.snappy) { focus = id } } else { path.append(id) }
+                           },
+                           onCoverTap: { showCover = false },
+                           schematic: schematic, focus: focus,
+                           onWireTap: { id in withAnimation(.snappy) { focus = "wire:" + id } },
+                           onEmptyTap: {
+                               if schematic { withAnimation(.snappy) { focus = nil } } else if !showCover { showCover = true }
+                           })
+                .frame(height: schematic ? 460 : 340)
+            VStack(alignment: .trailing, spacing: 10) {
+                if schematic {
+                    if let focus {
+                        WiringInfoCard(focus: focus, open: { path.append($0) }) { withAnimation(.snappy) { self.focus = nil } }
+                    } else {
+                        Text("Tap a part or a wire")
+                            .font(.footnote.weight(.medium)).foregroundStyle(Theme.inkSecondary)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                Button {
+                    withAnimation(.snappy) {
+                        schematic.toggle()
+                        focus = nil
+                    }
+                } label: {
+                    Image(systemName: schematic ? "cube.fill" : "point.3.connected.trianglepath.dotted")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(schematic ? Theme.background : Theme.ink)
+                        .padding(10)
+                        .background(schematic ? AnyShapeStyle(Theme.ink) : AnyShapeStyle(Material.ultraThinMaterial), in: Circle())
+                }
+                .accessibilityIdentifier("model.wiring")
+                .accessibilityLabel(schematic ? "Back to the robot" : "Show wiring")
             }
             .padding(12)
-            .accessibilityLabel(showCover ? "Hide cover" : "Show cover")
         }
         .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+        .animation(.snappy, value: schematic)
     }
 }
 
@@ -205,5 +239,57 @@ struct PartList: View {
                 Text("No matching part").foregroundStyle(Theme.inkSecondary).padding(.vertical, 24)
             }
         }
+    }
+}
+
+
+/// The wiring view's info card: what the tapped part or wire is and what it is doing right now, in plain words.
+struct WiringInfoCard: View {
+    let focus: String
+    let open: (String) -> Void
+    let close: () -> Void
+    @Environment(RobotStore.self) private var store
+
+    var body: some View {
+        let isWire = focus.hasPrefix("wire:")
+        let wire = isWire ? Wiring.shared?.wire(String(focus.dropFirst(5))) : nil
+        let text = wire.map { LiveStatus.wire($0, store: store) } ?? LiveStatus.part(focus, store: store)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                if let w = wire {
+                    Circle().fill(Color(red: w.color[0], green: w.color[1], blue: w.color[2]))
+                        .frame(width: 10, height: 10)
+                        .overlay(Circle().stroke(Color.black.opacity(0.2), lineWidth: 0.5))
+                }
+                Text(text.title).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.ink).lineLimit(2)
+                Spacer(minLength: 4)
+                Button(action: close) {
+                    Image(systemName: "xmark").font(.caption.weight(.bold)).foregroundStyle(Theme.inkSecondary)
+                        .padding(6)
+                }
+                .accessibilityLabel("Close")
+            }
+            ForEach(Array(text.lines.enumerated()), id: \.offset) { _, line in
+                Text(line).font(.footnote).foregroundStyle(Theme.inkSecondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if !isWire, PartCatalog.part(focus) != nil {
+                Button { open(focus) } label: {
+                    Text(PartKey.norm(focus) == "lcd" ? "Edit screen" : "Details").font(.footnote.weight(.semibold))
+                }
+                .padding(.top, 2)
+            } else if let w = wire {
+                HStack(spacing: 14) {
+                    if let a = w.from.part { Button(PartCatalog.name(a)) { open(a) }.lineLimit(1) }
+                    if let b = w.to.part { Button(PartCatalog.name(b)) { open(b) }.lineLimit(1) }
+                }
+                .font(.footnote.weight(.semibold))
+                .padding(.top, 2)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .staleness(store.dimmed)
+        .accessibilityIdentifier("wiring.info")
     }
 }

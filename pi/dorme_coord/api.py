@@ -21,9 +21,13 @@ CMD_FAULT_REARM = "fault.rearm"
 CMD_STATE_GET = "state.get"
 CMD_CAPABILITIES_GET = "capabilities.get"
 CMD_SCREEN_NOTE = "screen.note"     # 2026-11-26: message (+ optional countdown) on the robot's screen
+CMD_SCREEN_FACE = "screen.face"     # 2026-11-26 (screen editor): face style + eye colour, saved
+CMD_SCREEN_SHOW = "screen.show"     # the owner's own screen (drawing/text, blink) for a while or as the resting screen
+CMD_SCREEN_CLEAR = "screen.clear"   # back to the face (startup: also forget the resting screen)
 
 COMMANDS = (CMD_STOP, CMD_DRIVE_CLAIM, CMD_DRIVE_HOLD, CMD_DRIVE_RELEASE, CMD_TASK_START,
-            CMD_TASK_CANCEL, CMD_FAULT_REARM, CMD_STATE_GET, CMD_CAPABILITIES_GET, CMD_SCREEN_NOTE)
+            CMD_TASK_CANCEL, CMD_FAULT_REARM, CMD_STATE_GET, CMD_CAPABILITIES_GET, CMD_SCREEN_NOTE,
+            CMD_SCREEN_FACE, CMD_SCREEN_SHOW, CMD_SCREEN_CLEAR)
 NOTE_MAX_CHARS = 60
 NOTE_MAX_SECONDS = 4 * 3600         # countdown up to 4 h
 NOTE_DONE_SHOW_S = 60               # "00:00" stays this long after a countdown ends
@@ -98,7 +102,8 @@ REARM_CLASSES = ("phone_or_voice", "phone", "service", "auto")
 NOT_MEASURED = ("current", "runtime", "temperature", "motor_rpm", "charging_status", "wheel_speed")
 
 # ---- face states understood by the installed bootstrap face (dorme_pi_bootstrap/face.py) ----
-BOOTSTRAP_FACE_STATES = ("idle", "listening", "moving", "happy", "puzzled", "low_energy", "sleepy", "fault", "pairing", "note")
+BOOTSTRAP_FACE_STATES = ("idle", "listening", "moving", "happy", "puzzled", "low_energy", "sleepy", "fault", "pairing", "note",
+                         "screen")
 
 # ---- staleness rules the app applies (spec section 8, AUTH values) ----
 STALE_AFTER_MS = 3000

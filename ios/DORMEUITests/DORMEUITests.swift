@@ -88,14 +88,15 @@ final class DORMEUITests: XCTestCase {
         sleep(2)
         shot("home-connected")
 
-        // Open the cover with the button and look inside.
-        let coverButton = app.buttons["Hide cover"]
-        if coverButton.waitForExistence(timeout: 3) {
-            coverButton.tap()
-            sleep(1)
-            shot("home-inside")
-            app.buttons["Show cover"].tap()
-        }
+        // The wiring view: the robot explodes and every wire appears (2026-11-26).
+        let wiring = app.buttons["model.wiring"]
+        XCTAssertTrue(wiring.waitForExistence(timeout: 5), "wiring button missing")
+        wiring.tap()
+        sleep(2)
+        XCTAssertTrue(text(containing: "Tap a part or a wire").waitForExistence(timeout: 5), "wiring view did not open")
+        shot("home-wiring")
+        wiring.tap()
+        sleep(1)
 
         let battery = text(containing: " V")
         battery.swipeUp()                       // swipe on the readings, not the model (the model turns on drag)
@@ -124,6 +125,36 @@ final class DORMEUITests: XCTestCase {
         let leave = app.buttons.matching(NSPredicate(format: "label IN {'Cancel', 'Close'}")).firstMatch
         if leave.waitForExistence(timeout: 3) { leave.tap() }
         XCTAssertTrue(appear(app.buttons["Settings"], 10), "home toolbar did not come back after search")
+
+        // The screen editor: tap the LCD (search "screen"), pick a face style, then put text on the robot's screen.
+        search.tap()
+        search.typeText("screen")
+        let lcd = app.buttons.containing(NSPredicate(format: "label CONTAINS 'LCD'")).firstMatch
+        XCTAssertTrue(lcd.waitForExistence(timeout: 5), "search for 'screen' did not list the LCD")
+        lcd.tap()
+        let round = app.buttons["screen.style.round"]
+        XCTAssertTrue(round.waitForExistence(timeout: 10), "screen editor did not open on the LCD page")
+        round.tap()
+        shot("screen-face")
+        app.buttons["screen.apply"].tap()
+        XCTAssertTrue(text(containing: "using this face").waitForExistence(timeout: 10), "robot did not take the face style")
+        app.segmentedControls["screen.mode"].buttons["Custom"].tap()
+        app.segmentedControls.buttons["Text"].tap()
+        let msg = app.textViews["screen.text"].exists ? app.textViews["screen.text"] : app.textFields["screen.text"]
+        XCTAssertTrue(msg.waitForExistence(timeout: 5), "text field missing")
+        msg.tap()
+        msg.typeText("Back at 5")
+        app.staticTexts["Blink"].firstMatch.tap()          // closes the keyboard
+        shot("screen-custom")
+        app.buttons["screen.apply"].tap()
+        XCTAssertTrue(text(containing: "Showing on DORM-E").waitForExistence(timeout: 15), "robot did not show the custom screen")
+        shot("screen-sent")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let leave2 = app.buttons.matching(NSPredicate(format: "label IN {'Cancel', 'Close'}")).firstMatch
+        if leave2.waitForExistence(timeout: 3) { leave2.tap() }
+        XCTAssertTrue(appear(app.buttons["Settings"], 10), "home toolbar did not come back after the editor")
+        sleep(1)
+        shot("home-custom-screen")
 
         // Settings.
         app.buttons["Settings"].tap()

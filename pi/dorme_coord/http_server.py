@@ -23,6 +23,8 @@ log = logging.getLogger("dorme-coord.http")
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"   # RFC 6455 section 1.3 (a typo here broke every iOS connection until 2026-11-25)
 MAX_HEADER = 8192
 MAX_BODY = 16384
+MAX_IMAGE_BODY = 1_500_000          # POST /api/v1/screen/image (a 480x320 PNG from the screen editor)
+IMAGE_PATH = "/api/v1/screen/image"
 MAX_WS_FRAME = 65536
 WS_RATE_PER_S = 30
 REASONS = {200: "OK", 204: "No Content", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden",
@@ -140,7 +142,14 @@ class ApiServer:
                 key, value = line.split(":", 1)
                 headers[key.strip().lower()] = value.strip()
         length = int(headers.get("content-length", "0") or 0)
-        if length > MAX_BODY:
+        limit = MAX_BODY
+        if method.upper() == "POST" and target.split("?", 1)[0].rstrip("/") == IMAGE_PATH:
+            # big bodies only for a paired phone: check the token before reading the picture
+            if length <= MAX_IMAGE_BODY and self._session(Request("POST", target, headers, b"", peer))["authenticated"]:
+                limit = MAX_IMAGE_BODY
+            elif length > MAX_BODY:
+                raise HttpError(401 if length <= MAX_IMAGE_BODY else 413, "Pair first" if length <= MAX_IMAGE_BODY else "Body too large")
+        if length > limit:
             raise HttpError(413, "Body too large")
         body = await asyncio.wait_for(reader.readexactly(length), 10) if length else b""
         return Request(method.upper(), target, headers, body, peer)
@@ -288,6 +297,18 @@ class ApiServer:
         elif p == "/api/v1/camera/stream.mjpg" and m == "GET":
             self._require(source)
             await self._mjpeg(writer)
+        elif p == IMAGE_PATH and m == "POST":
+            self._require(source)
+            store = self.coord.screen_store
+            if not store.available():
+                await self._send_json(writer, 503, ack(None, False, "UNAVAILABLE", message=store.status()["reason"]))
+                return
+            try:
+                name = store.save_png(req.body)
+            except ValueError as exc:
+                await self._send_json(writer, 400, ack(None, False, "BAD_REQUEST", message=str(exc)))
+                return
+            await self._send_json(writer, 200, ack(None, True, result={"file": name}))
         elif p == "/api/v1/ws" and m == "GET":
             if not source["authenticated"]:
                 log.warning("WebSocket upgrade refused (401): no valid token from %s; headers seen: %s",

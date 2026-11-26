@@ -282,6 +282,23 @@ final class NetworkRobotClient: RobotClient {
         }
     }
 
+    func uploadScreenImage(_ png: Data) async -> Ack {
+        var req = request("api/v1/screen/image", method: "POST", timeout: 15)
+        req.setValue("image/png", forHTTPHeaderField: "Content-Type")
+        req.httpBody = png
+        do {
+            let (data, response) = try await session.data(for: req)
+            if let ack = try? DORMEJSON.decoder.decode(Ack.self, from: data) { return ack }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 404 {
+                return .failure(nil, "UNAVAILABLE", "DORM-E needs a software update for custom screens.")
+            }
+            return .failure(nil, "REFUSED", "The robot refused the picture (\(status)).")
+        } catch {
+            return .failure(nil, "OFFLINE", "Can't reach the robot to send the picture.")
+        }
+    }
+
     func send(_ command: RobotCommand) async -> Ack {
         guard let ws, socketOpen, let data = try? command.wireData(), let text = String(data: data, encoding: .utf8) else {
             return .failure(command.id, "OFFLINE")

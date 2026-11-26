@@ -16,7 +16,12 @@ struct PartDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if let node = part?.node {
+                if PartKey.norm(partID) == "lcd" {
+                    // 2026-11-26: tapping the screen opens DORM-E's screen editor (face style, colour, own screens)
+                    ScreenEditorView()
+                    Divider().padding(.vertical, 4)
+                }
+                if let node = part?.node, PartKey.norm(partID) != "lcd" {
                     // the part on its own, on white, like a product photo (a render of the detailed model)
                     PartProductView(nodeName: node)
                         .frame(height: 270)
@@ -27,7 +32,8 @@ struct PartDetailView: View {
                         }
                     Text("Where it is").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.inkSecondary)
                     RobotSceneView(statuses: [:], selected: partID,
-                                   face: store.phase == .connected || store.isDemo ? store.state?.face.state : nil)
+                                   face: store.phase == .connected || store.isDemo ? store.state?.face.state : nil,
+                                   look: store.lcdLook)
                         .frame(height: 200)
                         .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
                         .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))

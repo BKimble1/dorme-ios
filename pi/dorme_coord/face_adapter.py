@@ -28,6 +28,7 @@ FACE_MAP = {
     "puzzled": "puzzled", "low_energy": "low_energy", "sleepy": "sleepy", "fault": "fault",
     "pairing": "pairing",   # 2026-11-25: big on-screen one-time code (needs the face with the "pairing" state)
     "note": "note",         # 2026-11-26: owner's message + countdown (face state "note", fields text/until)
+    "screen": "screen",     # 2026-11-26: owner's own screen (face state "screen", field screen = {bg, layers})
 }
 
 
@@ -56,9 +57,10 @@ class FaceAdapter:
             return {"status": "error", "reason": self.error}
         return {"status": "ok", "reason": None}
 
-    def set(self, name, transient_s=None, code=None, qr=None, note=None, direction=None):
+    def set(self, name, transient_s=None, code=None, qr=None, note=None, direction=None, screen=None, alert=False):
         """Write the face state if it changed (or needs a refresh). Returns True if written.
-        code: six digits shown by the "pairing" state only."""
+        code: six digits shown by the "pairing" state only. screen: {bg, layers} for "screen".
+        alert: the face keeps its look and adds a small amber dot (a fault the app explains)."""
         state = FACE_MAP.get(name, "idle")
         assert state in BOOTSTRAP_FACE_STATES
         if state == "pairing" and not (isinstance(code, str) and code.isdigit() and len(code) == 6):
@@ -73,14 +75,20 @@ class FaceAdapter:
             note = None
         if state != "moving" or direction not in ("F", "B", "L", "R"):
             direction = None
+        if state == "screen" and not (isinstance(screen, dict) and screen.get("layers")):
+            state = "idle"
+        if state != "screen":
+            screen = None
+        alert = bool(alert) and state not in ("pairing", "sleepy")
         now = self.clock()
-        if state == "idle":
-            if self.last_written in (None, "idle"):
+        if state == "idle" and not alert:
+            if self.last_written in (None, "idle") and not getattr(self, "last_alert", False):
                 return False             # never overwrite a manual `dormectl face` with idle at start
             expires = 0
         else:
             if (state == self.last_written and code == self.last_code and note == self.last_note
-                    and direction == getattr(self, "last_dir", None)
+                    and direction == getattr(self, "last_dir", None) and screen == getattr(self, "last_screen", None)
+                    and alert == getattr(self, "last_alert", False)
                     and transient_s is None and now - self.last_write_at < REFRESH_S):
                 return False
             expires = now + (transient_s if transient_s is not None else HOLD_S)
@@ -91,6 +99,10 @@ class FaceAdapter:
             data["qr"] = qr
         if direction:
             data["dir"] = direction
+        if alert:
+            data["alert"] = True
+        if screen:
+            data["screen"] = screen
         if note:
             data["text"] = note["text"]
             if note.get("until"):
@@ -98,6 +110,7 @@ class FaceAdapter:
         written = self._write(data, state, now)
         if written:
             self.last_code, self.last_note, self.last_dir = code, note, direction
+            self.last_screen, self.last_alert = screen, alert
         return written
 
     def _write(self, data, state, now):

@@ -24,6 +24,10 @@ public final class DemoRobot: RobotClient {
     private var fault: FaultInfo?
     private var note: ScreenNote?
     private var noteExpires: Date?
+    private var faceSettings = FaceSettings(style: "classic", color: nil)
+    private var custom: (label: String, until: Date?)?
+    private var resting: String?
+    private var uploads = 0
     private var owner: (client: String, claim: String, seq: Int, direction: Direction?, leaseUntil: Date?)?
     private var epoch = 0
     private var task: RobotTask?
@@ -77,6 +81,13 @@ public final class DemoRobot: RobotClient {
     public func stop() async -> Ack { await send(.stop()) }
 
     public func refreshTasks() async { emitTasks() }
+
+    /// The demo keeps no pictures: it answers like the robot so the editor can be tried.
+    public func uploadScreenImage(_ png: Data) async -> Ack {
+        guard png.count > 8 else { return .failure(nil, "BAD_REQUEST") }
+        uploads += 1
+        return Ack(id: nil, ok: true, result: ["file": .string(String(format: "%032ld", uploads) + ".png")])
+    }
 
     public func send(_ command: RobotCommand) async -> Ack {
         // A stop always "reaches" the demo; everything else needs the demo network to be up.
@@ -210,6 +221,28 @@ public final class DemoRobot: RobotClient {
             note = ScreenNote(text: text.isEmpty ? "Timer" : text,
                               until: seconds > 0 ? now.addingTimeInterval(Double(seconds)).timeIntervalSince1970 : nil)
             noteExpires = seconds > 0 ? now.addingTimeInterval(Double(seconds) + 60) : nil
+            custom = nil
+            return Ack(id: c.id, ok: true)
+        case "screen.face":
+            let styles = ["classic", "round", "tall", "wide", "calm", "happy"]
+            guard let style = c.args["style"]?.string, styles.contains(style) else { return .failure(c.id, "BAD_REQUEST") }
+            let color = c.args["color"]?.array?.compactMap(\.int)
+            faceSettings = FaceSettings(style: style, color: color?.count == 3 ? color : nil)
+            return Ack(id: c.id, ok: true)
+        case "screen.show":
+            guard let layers = c.args["layers"]?.array, (1...4).contains(layers.count) else { return .failure(c.id, "BAD_REQUEST") }
+            let seconds = c.args["seconds"]?.int ?? 0
+            let label = c.args["label"]?.string ?? "Your screen"
+            note = nil; noteExpires = nil
+            if c.args["startup"]?.bool == true {
+                resting = label; custom = nil
+            } else {
+                custom = (label, seconds > 0 ? clock().addingTimeInterval(Double(seconds)) : nil)
+            }
+            return Ack(id: c.id, ok: true)
+        case "screen.clear":
+            custom = nil
+            if c.args["startup"]?.bool == true { resting = nil }
             return Ack(id: c.id, ok: true)
         case "state.get", "capabilities.get":
             return Ack(id: c.id, ok: true)
@@ -394,13 +427,15 @@ public final class DemoRobot: RobotClient {
         let moving = !benchMode && controllerLinked && owner?.direction != nil && fault == nil
         let block = driveBlock()
         if let e = noteExpires, now >= e { note = nil; noteExpires = nil }
+        if let u = custom?.until, now >= u { custom = nil }
         let faceName: String = {
             // same order as the robot (coordinator.compute_face): a requested look and the owner's note
             // show over a standing fault
             if let tf = transientFace, now < tf.until { return tf.name }
             if note != nil { return "note" }
-            if let f = fault { return f.code == "LOW_BUS" ? "low_energy" : "fault" }
-            if !controllerLinked { return "fault" }
+            if custom != nil { return "screen" }
+            // since 2026-11-26 a fault keeps the calm face (the app and the LCD add a small amber dot)
+            if let f = fault, f.code == "LOW_BUS" { return "low_energy" }
             if owner != nil { return "moving" }
             if lowBattery { return "low_energy" }
             return "idle"
@@ -440,7 +475,9 @@ public final class DemoRobot: RobotClient {
             network: NetworkInfo(trust: "private", wifiSsid: "Demo Wi-Fi", wifiDbm: -52, ipv4: ["demo"],
                                  remote: RemoteInfo(online: false)),
             health: demoHealth(activeFault: activeFault),
-            screen: ScreenInfo(note: note),
+            screen: ScreenInfo(note: note, face: faceSettings, styles: ["classic", "round", "tall", "wide", "calm", "happy"],
+                               custom: custom.map { ScreenLabel(label: $0.label, until: $0.until?.timeIntervalSince1970) },
+                               resting: resting.map { ScreenLabel(label: $0) }, editor: "ok"),
             notMeasured: ["current", "runtime", "temperature", "motor_rpm", "charging_status", "wheel_speed"])
     }
 
@@ -479,7 +516,8 @@ public final class DemoRobot: RobotClient {
 
     public func capabilities() -> Capabilities {
         Capabilities(apiVersion: 1, commands: ["stop", "drive.claim", "drive.hold", "drive.release", "task.start",
-                                               "task.cancel", "fault.rearm", "state.get", "capabilities.get", "screen.note"],
+                                               "task.cancel", "fault.rearm", "state.get", "capabilities.get", "screen.note",
+                                               "screen.face", "screen.show", "screen.clear"],
                      drive: DriveCaps(directions: ["F", "B", "L", "R"], holdToDrive: true, speedLevelsPct: [30], turnSpeedPct: 60,
                                       speedNote: "Phone speed is fixed at SPEED_LOW in V1. Firmware caps PWM at 60 %.",
                                       holdLeaseMs: leaseMs, holdIntervalMs: 200),

@@ -32,6 +32,7 @@ DEFAULTS = {
     "battery_settle_ms": 5000,
     # Peripherals
     "face_state_dir": "/run/dorme-face",
+    "face_settings_dir": "/var/lib/dorme-face",     # screen editor settings + pictures (dorme-face StateDirectory)
     "linkd_socket": "/run/dorme/link.sock",
     "ble_status_file": "/run/dorme/ble.json",
     "audio_card_match": "USB",

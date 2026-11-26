@@ -73,7 +73,7 @@
     "command": {
       "type": "object", "required": ["v", "type", "id", "name", "args"],
       "properties": {"v": {"enum": [1]}, "type": {"enum": ["command"]}, "id": {"type": "string"},
-                     "name": {"enum": ["stop", "drive.claim", "drive.hold", "drive.release", "task.start", "task.cancel", "fault.rearm", "state.get", "capabilities.get", "screen.note"]},
+                     "name": {"enum": ["stop", "drive.claim", "drive.hold", "drive.release", "task.start", "task.cancel", "fault.rearm", "state.get", "capabilities.get", "screen.note", "screen.face", "screen.show", "screen.clear"]},
                      "args": {"type": "object"}}
     },
     "ack": {

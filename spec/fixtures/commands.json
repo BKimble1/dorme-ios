@@ -83,5 +83,64 @@
   "name": "screen.note",
   "type": "command",
   "v": 1
+ },
+ {
+  "args": {
+   "style": "round",
+   "color": [
+    255,
+    170,
+    210
+   ]
+  },
+  "id": "c11",
+  "name": "screen.face",
+  "type": "command",
+  "v": 1
+ },
+ {
+  "args": {
+   "bg": [
+    0,
+    0,
+    0
+   ],
+   "layers": [
+    {
+     "kind": "image",
+     "file": "0123456789abcdef0123456789abcdef.png",
+     "blink": false
+    },
+    {
+     "kind": "text",
+     "text": "Back at 5",
+     "font": "bold",
+     "color": [
+      255,
+      200,
+      80
+     ],
+     "x": 0.5,
+     "y": 0.5,
+     "blink": true
+    }
+   ],
+   "seconds": 600,
+   "startup": false,
+   "label": "Back at 5"
+  },
+  "id": "c12",
+  "name": "screen.show",
+  "type": "command",
+  "v": 1
+ },
+ {
+  "args": {
+   "startup": false
+  },
+  "id": "c13",
+  "name": "screen.clear",
+  "type": "command",
+  "v": 1
  }
 ]
