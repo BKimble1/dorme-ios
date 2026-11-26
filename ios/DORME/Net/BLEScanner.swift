@@ -137,7 +137,7 @@ final class BLEScanner {
         }
         let info = (try? JSONSerialization.jsonObject(with: Data(reply.dropFirst()))) as? [String: Any]
         let code = info?["code"] as? String ?? "REFUSED"
-        let message = (info?["message"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? Ack.message(code)
+        let message = (info?["message"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? (Ack.messages[code] ?? "DORM-E refused to pair.")
         return .refused(code: code, message: message)
     }
 
