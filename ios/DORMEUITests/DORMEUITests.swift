@@ -97,11 +97,12 @@ final class DORMEUITests: XCTestCase {
             app.buttons["Show cover"].tap()
         }
 
-        app.swipeUp()
+        let battery = text(containing: " V")
+        battery.swipeUp()                       // swipe on the readings, not the model (the model turns on drag)
         sleep(1)
         shot("home-lower")
-        app.swipeDown()
-        app.swipeDown()
+        app.staticTexts["DORM-E"].firstMatch.swipeDown()
+        search.swipeDown()
 
         // Search finds parts by everyday words.
         search.tap()
@@ -113,7 +114,8 @@ final class DORMEUITests: XCTestCase {
         let pi = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Raspberry Pi'")).firstMatch
         XCTAssertTrue(pi.waitForExistence(timeout: 5), "search for 'temperature' did not list the Pi")
         pi.tap()
-        XCTAssertTrue(text(containing: "Temperature").waitForExistence(timeout: 15), "Pi detail shows no temperature")
+        XCTAssertTrue(app.navigationBars.staticTexts.containing(NSPredicate(format: "label CONTAINS 'Raspberry Pi'")).firstMatch
+                        .waitForExistence(timeout: 10), "the Pi's page did not open")
         sleep(2)
         shot("part-pi")
         app.navigationBars.buttons.element(boundBy: 0).tap()

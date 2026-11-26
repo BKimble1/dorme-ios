@@ -32,7 +32,7 @@ struct RobotSceneView: UIViewRepresentable {
         view.allowsCameraControl = true
         view.defaultCameraController.interactionMode = .orbitTurntable
         view.defaultCameraController.inertiaEnabled = true
-        view.defaultCameraController.minimumVerticalAngle = -10
+        view.defaultCameraController.minimumVerticalAngle = 3      // never orbit below the floor
         view.defaultCameraController.maximumVerticalAngle = 70
         view.preferredFramesPerSecond = 60
         view.accessibilityLabel = "3D model of DORM-E"
@@ -72,12 +72,12 @@ struct RobotSceneView: UIViewRepresentable {
             }
         }
         scene.lightingEnvironment.contents = studioEnvironment()
-        scene.lightingEnvironment.intensity = 1.25
+        scene.lightingEnvironment.intensity = 0.75
 
         let key = SCNNode()
         key.light = SCNLight()
         key.light?.type = .directional
-        key.light?.intensity = 1300
+        key.light?.intensity = 620
         key.light?.color = UIColor(white: 1, alpha: 1)
         key.light?.castsShadow = true
         key.light?.shadowMode = .forward
@@ -94,7 +94,7 @@ struct RobotSceneView: UIViewRepresentable {
         let rim = SCNNode()
         rim.light = SCNLight()
         rim.light?.type = .directional
-        rim.light?.intensity = 500
+        rim.light?.intensity = 220
         rim.position = SCNVector3(center.x - size * 1.5, center.y + size, center.z - size * 1.6)
         rim.look(at: center)
         root.addChildNode(rim)
@@ -117,9 +117,9 @@ struct RobotSceneView: UIViewRepresentable {
         camera.fieldOfView = 30
         camera.wantsHDR = true
         camera.wantsExposureAdaptation = false
-        camera.exposureOffset = 0
+        camera.exposureOffset = -0.2
         camera.bloomIntensity = 0.25
-        camera.bloomThreshold = 0.9
+        camera.bloomThreshold = 1.2
         camera.bloomBlurRadius = 6
         camera.screenSpaceAmbientOcclusionIntensity = 0.9
         camera.screenSpaceAmbientOcclusionRadius = 0.012
