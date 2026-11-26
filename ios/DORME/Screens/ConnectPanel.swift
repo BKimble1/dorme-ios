@@ -54,11 +54,13 @@ struct ConnectPanel: View {
                 Image(systemName: "ellipsis.circle").font(.title3)
             }
             .tint(Theme.ink)
+            .accessibilityLabel("More")
         }
         if showAddress {
             HStack {
                 TextField("dorm-e.local", text: $address)
                     .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    .accessibilityIdentifier("connect.address")
                     .padding(10).background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 Button("Go") { store.connect(host: address, port: store.savedPort) }
                     .buttonStyle(.borderedProminent).tint(Theme.ink)
@@ -89,6 +91,7 @@ struct PairPanel: View {
             HStack(spacing: 10) {
                 TextField("000000", text: $code)
                     .keyboardType(.numberPad).textContentType(.oneTimeCode)
+                    .accessibilityIdentifier("pair.code")
                     .font(.system(.title2, design: .monospaced).weight(.semibold))
                     .padding(10).background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .onChange(of: code) { _, new in

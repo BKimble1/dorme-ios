@@ -1,5 +1,5 @@
 # XcodeGen spec for the DORM-E iPhone app. On a Mac:  brew install xcodegen && xcodegen && open DORME.xcodeproj
-# NOT YET GENERATED OR COMPILED: written on Windows, where Xcode does not exist.
+# Generated and compiled in CI (.github/workflows/ios.yml); the UI tests run there in the iOS Simulator.
 name: DORME
 options:
   bundleIdPrefix: local.dorme          # change to your own reverse-DNS prefix before signing
@@ -52,10 +52,31 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""            # set your Apple developer team to run on a phone
+  DORMEUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: DORMEUITests
+    dependencies:
+      - target: DORME
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: local.dorme.uitests
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        TEST_TARGET_NAME: DORME
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
 schemes:
   DORME:
     build:
       targets:
         DORME: all
+        DORMEUITests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - DORMEUITests

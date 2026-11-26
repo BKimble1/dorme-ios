@@ -31,10 +31,44 @@ enum PartCatalog {
 
     static func name(_ id: String) -> String { part(id)?.name ?? id }
 
+    /// Everyday words that should find a part even though they are not in its name.
+    static let keywords: [String: [String]] = [
+        "PI4": ["pi", "computer", "brain", "cpu", "temperature", "temp", "heat", "memory", "storage"],
+        "ESP32_U7": ["controller", "microcontroller", "firmware", "esp", "safety"],
+        "LCD": ["screen", "display", "face", "eyes"],
+        "CAMERA": ["camera", "video", "vision"],
+        "SONAR": ["distance", "ultrasonic", "obstacle", "range"],
+        "BATTERY": ["battery", "power", "voltage", "charge"],
+        "INA219_U9": ["current", "voltage", "power", "battery"],
+        "J_CHG": ["charge", "charger", "charging", "plug"],
+        "S2_SWITCH": ["button", "power", "on", "off"],
+        "FAN": ["fan", "cooling", "temperature", "heat"],
+        "AUDIO_U16": ["microphone", "mic", "voice", "sound"],
+        "SPEAKER": ["sound", "audio", "chime"],
+        "M1": ["motor", "drive", "wheel"], "M2": ["motor", "drive", "wheel"],
+        "M3": ["motor", "drive", "wheel"], "M4": ["motor", "drive", "wheel"],
+        "MD20A_U4": ["motor", "driver", "drive"], "MD20A_U5": ["motor", "driver", "drive"],
+        "W1": ["tire", "tyre", "drive"], "W2": ["tire", "tyre", "drive"], "W3": ["tire", "tyre", "drive"], "W4": ["tire", "tyre", "drive"],
+        "WIFI": ["wifi", "wireless", "network", "internet", "signal"],
+        "BLUETOOTH": ["ble", "bluetooth", "wireless", "setup"],
+        "REMOTE": ["tailscale", "remote", "internet", "vpn", "anywhere"],
+        "A03_cover": ["shell", "body", "case", "lid"],
+        "A01_chassis": ["frame", "base", "body"],
+    ]
+
     static func search(_ query: String) -> [CatalogPart] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !q.isEmpty else { return all }
-        return all.filter { $0.name.lowercased().contains(q) || $0.id.lowercased().contains(q) || $0.category.lowercased().contains(q) }
+        let words = q.split(separator: " ").map(String.init)
+        func hay(_ p: CatalogPart) -> String {
+            ([p.name, p.id, p.category] + (keywords[p.id] ?? [])).joined(separator: " ").lowercased()
+        }
+        let hits = all.filter { p in let h = hay(p); return words.allSatisfy { h.contains($0) } }
+        // name matches first
+        return hits.sorted { a, b in
+            let an = a.name.lowercased().contains(q), bn = b.name.lowercased().contains(q)
+            return an && !bn
+        }
     }
 }
 

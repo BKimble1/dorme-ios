@@ -191,8 +191,9 @@ class ApiServer:
             if not token:
                 await self._send_json(writer, ACK_HTTP_STATUS[code], ack(None, False, code, result={"retry_after_s": wait_s}))
             else:
-                if not self.auth.active_code():
-                    self.coord.hide_pairing()     # the on-screen code was used (or had expired): clear the screen
+                # paired: the on-screen code has done its job (used, expired, or the label PIN was typed instead)
+                self.auth.cancel_code()
+                self.coord.hide_pairing()
                 await self._send_json(writer, 200, ack(None, True, result={"token": token}))
         elif p == "/api/v1/pair/show" and m == "POST":
             # The code is drawn on the robot's own screen and never put in any reply: seeing the robot is the proof.

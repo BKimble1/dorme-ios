@@ -267,7 +267,12 @@ public struct RemoteInfo: Codable, Equatable, Sendable {
     public var online: Bool
     public var name: String?
     public var ips: [String]?
-    public init(online: Bool, name: String? = nil, ips: [String]? = nil) { self.online = online; self.name = name; self.ips = ips }
+    /// Tailscale's backend state: "Running", "NeedsLogin", "Stopped", ... (nil when Tailscale is not installed)
+    public var state: String?
+    public init(online: Bool, name: String? = nil, ips: [String]? = nil, state: String? = nil) {
+        self.online = online; self.name = name; self.ips = ips; self.state = state
+    }
+    public var needsSignIn: Bool { !online && state == "NeedsLogin" }
 }
 
 // MARK: - Health (robot's per-part view, 2026-11-25)

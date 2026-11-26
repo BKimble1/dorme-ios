@@ -583,7 +583,8 @@ class Coordinator:
         w, r = v.get("wifi") or {}, v.get("remote") or {}
         return {"trust": self.config["network_trust"], "wifi_ssid": w.get("ssid"), "wifi_dbm": w.get("signal_dbm"),
                 "ipv4": w.get("ipv4") or [], "ethernet_ipv4": w.get("ethernet_ipv4") or [],
-                "remote": {"online": bool(r.get("online")), "name": r.get("name"), "ips": r.get("ips") or []}}
+                "remote": {"online": bool(r.get("online")), "name": r.get("name"), "ips": r.get("ips") or [],
+                           "state": r.get("state")}}
 
     def capabilities(self):
         c = self.config

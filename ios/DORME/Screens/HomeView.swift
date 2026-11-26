@@ -2,7 +2,7 @@ import SwiftUI
 import DORMEKit
 
 /// Home: the live robot. Status, connection (inline, no sheet), the 3D model tinted by part health,
-/// issues, three key readings and the camera. Pull down to search any part.
+/// issues, three key readings and the camera. The search bar finds any part.
 struct HomeView: View {
     @Environment(RobotStore.self) private var store
     @State private var path = NavigationPath()
@@ -35,7 +35,7 @@ struct HomeView: View {
             .scrollIndicators(.hidden)
             .background(Theme.background.ignoresSafeArea())
             .navigationTitle("DORM-E")
-            .searchable(text: $query, prompt: "Search parts")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search parts")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
@@ -47,6 +47,11 @@ struct HomeView: View {
         }
     }
 
+    /// What the robot's screen shows right now (nil = dark: not connected).
+    private var liveFace: String? {
+        store.phase == .connected || store.isDemo ? store.state?.face.state : nil
+    }
+
     private var statuses: [String: String] {
         guard let parts = store.state?.health?.parts, store.phase == .connected || store.isDemo else { return [:] }
         return Dictionary(parts.map { (PartKey.norm($0.key), $0.value.s) }, uniquingKeysWith: { a, _ in a })
@@ -54,8 +59,9 @@ struct HomeView: View {
 
     private var modelCard: some View {
         ZStack(alignment: .bottomTrailing) {
-            RobotSceneView(statuses: statuses, showCover: showCover) { path.append($0) }
-                .frame(height: 330)
+            RobotSceneView(statuses: statuses, showCover: showCover, face: liveFace,
+                           onTap: { path.append($0) }, onCoverTap: { showCover = false })
+                .frame(height: 340)
             Button { showCover.toggle() } label: {
                 Image(systemName: showCover ? "cube.transparent.fill" : "cube.transparent")
                     .font(.body.weight(.semibold))

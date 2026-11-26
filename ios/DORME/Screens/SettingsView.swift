@@ -36,9 +36,10 @@ struct SettingsView: View {
 
                 Section("Remote access") {
                     let remote = store.state?.network.remote
-                    LabeledContent("Status", value: remote?.online == true ? (remote?.name ?? "On") : "Off")
+                    LabeledContent("Status", value: remote?.online == true ? (remote?.name ?? "On")
+                                    : (remote?.needsSignIn == true ? "Sign-in needed" : "Off"))
                     if store.phase == .connected && remote?.online != true {
-                        Button("Turn on") {
+                        Button(remote?.needsSignIn == true ? "Sign in to Tailscale" : "Turn on") {
                             Task {
                                 let ack = await store.enableRemote()
                                 if let url = ack.result.lookup("login_url")?.string, let u = URL(string: url) { openURL(u) }

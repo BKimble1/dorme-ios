@@ -17,7 +17,8 @@ struct PartDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if part?.node != nil {
-                    RobotSceneView(statuses: [:], selected: partID)
+                    RobotSceneView(statuses: [:], selected: partID,
+                                   face: store.phase == .connected || store.isDemo ? store.state?.face.state : nil)
                         .frame(height: 240)
                         .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
                         .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))

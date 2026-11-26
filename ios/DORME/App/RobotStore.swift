@@ -94,7 +94,14 @@ final class RobotStore {
     }
 
     func connect(host: String, port: Int) {
-        let h = host.trimmingCharacters(in: .whitespaces)
+        var h = host.trimmingCharacters(in: .whitespaces)
+        var port = port
+        // accept "host:port" (not for bare IPv6 addresses, which have several colons)
+        if h.filter({ $0 == ":" }).count == 1, let i = h.lastIndex(of: ":"), let p = Int(h[h.index(after: i)...]), (1...65535).contains(p) {
+            port = p
+            h = String(h[..<i])
+        }
+        if h.hasPrefix("http://") { h.removeFirst(7) }
         guard !h.isEmpty else { return }
         searchTask?.cancel()
         connectState = .idle
@@ -104,13 +111,15 @@ final class RobotStore {
     }
 
     /// Every address worth trying, best first: Bonjour on this network, the address typed last, the robot's
-    /// last Wi-Fi address, then its Tailscale name and address (reachable from anywhere once set up).
+    /// last Wi-Fi address, then its Tailscale name and address (reachable from anywhere once set up), then the
+    /// default names: dorm-e.local on this network and dorm-e through Tailscale (MagicDNS).
     var candidateHosts: [String] {
         var list = discovery.hosts
         for key in ["robot.host", "robot.lanIP", "robot.remoteName", "robot.remoteIP"] {
             if let h = defaults.string(forKey: key), !h.isEmpty { list.append(h) }
         }
         list.append("dorm-e.local")
+        list.append("dorm-e")
         var seen = Set<String>()
         return list.filter { seen.insert($0).inserted }
     }

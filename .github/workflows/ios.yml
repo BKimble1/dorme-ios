@@ -24,7 +24,7 @@ jobs:
   build:
     name: Compile and test
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v5
       - name: Select the newest Xcode (26 or later; iOS 27 SDK needed from April 2027)
@@ -73,12 +73,47 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO build | tee build.log | grep -E "error|warning: .*deprecated|BUILD" || true
           grep -q "BUILD SUCCEEDED" build.log
-      - name: Keep the build log
-        if: failure()
+      - name: Simulated end-to-end run (the real app in the iOS Simulator against the robot simulator)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          d = json.load(sys.stdin)["devices"]
+          c = [x for k, v in d.items() if "iOS" in k for x in v if x["name"].startswith("iPhone")]
+          c.sort(key=lambda x: ("Pro" not in x["name"], "Max" in x["name"], x["name"]))
+          print(c[0]["udid"]); print("simulator:", c[0]["name"], file=sys.stderr)')
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b || true
+          TEST_RUNNER_DORME_SIM_PIN="$DORME_SIM_PIN" TEST_RUNNER_DORME_SIM_HOST="127.0.0.1:8099"           xcodebuild test -project DORME.xcodeproj -scheme DORME -destination "id=$UDID"             -resultBundlePath "$RUNNER_TEMP/UITests.xcresult" | tee uitest.log | grep -E "Test Case|error:|TEST (SUCCEEDED|FAILED)" || true
+          grep -q "TEST SUCCEEDED" uitest.log
+      - name: Export the app screenshots
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/shots"
+          xcrun xcresulttool export attachments --path "$RUNNER_TEMP/UITests.xcresult" --output-path "$RUNNER_TEMP/shots" || true
+          python3 - "$RUNNER_TEMP/shots" <<'PY' || true
+          import json, os, sys
+          d = sys.argv[1]
+          for test in json.load(open(os.path.join(d, "manifest.json"))):
+              for a in test.get("attachments", []):
+                  src = os.path.join(d, a["exportedFileName"])
+                  name = a.get("suggestedHumanReadableName") or a["exportedFileName"]
+                  name = name.split("_", 1)[0] if name.count("_") and name[:2].isdigit() else name
+                  if os.path.exists(src):
+                      os.replace(src, os.path.join(d, test["testIdentifier"].split("/")[-1].replace("()", "") + "-" + name + (".png" if not name.endswith(".png") else "")))
+          PY
+          ls "$RUNNER_TEMP/shots"
+      - name: Keep the screenshots and logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
-          path: ios/build.log
+          name: app-run
+          path: |
+            ${{ runner.temp }}/shots
+            ios/uitest.log
+            ios/build.log
+            ${{ runner.temp }}/sim.log
           if-no-files-found: ignore
 
   testflight:
