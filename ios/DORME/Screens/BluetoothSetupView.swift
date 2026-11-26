@@ -93,7 +93,12 @@ struct BluetoothSetupView: View {
             }
         case .some(false):
             Label(r?.message ?? "Could not join", systemImage: "xmark.circle.fill").foregroundStyle(Theme.bad)
-            Button("Try again") { sent = false }
+            Button("Try again") {
+                // a used or expired code can't seal again: show a new one and scan it
+                if let id = robotID { store.ble.clearResult(id); store.ble.requestCode(id) }
+                qr = nil
+                sent = false
+            }
         default:
             HStack { ProgressView(); Text(r?.message ?? "Joining") }
         }

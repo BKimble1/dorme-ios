@@ -1,3 +1,4 @@
+import Network
 import SwiftUI
 import DORMEKit
 
@@ -96,12 +97,20 @@ final class RobotStore {
     func connect(host: String, port: Int) {
         var h = host.trimmingCharacters(in: .whitespaces)
         var port = port
-        // accept "host:port" (not for bare IPv6 addresses, which have several colons)
-        if h.filter({ $0 == ":" }).count == 1, let i = h.lastIndex(of: ":"), let p = Int(h[h.index(after: i)...]), (1...65535).contains(p) {
+        // accept "http://host:port/..." and "host:port" (not bare IPv6 addresses, which have several colons)
+        for scheme in ["http://", "https://", "ws://", "wss://"] where h.lowercased().hasPrefix(scheme) {
+            h.removeFirst(scheme.count)
+        }
+        if !h.hasPrefix("["), let slash = h.firstIndex(of: "/") { h = String(h[..<slash]) }
+        if h.hasPrefix("["), let close = h.firstIndex(of: "]") {        // [v6]:port
+            let rest = h[h.index(after: close)...]
+            if rest.hasPrefix(":"), let p = Int(rest.dropFirst()), (1...65535).contains(p) { port = p }
+            h = String(h[h.index(after: h.startIndex)..<close])
+        } else if h.filter({ $0 == ":" }).count == 1, let i = h.lastIndex(of: ":"),
+                  let p = Int(h[h.index(after: i)...]), (1...65535).contains(p) {
             port = p
             h = String(h[..<i])
         }
-        if h.hasPrefix("http://") { h.removeFirst(7) }
         guard !h.isEmpty else { return }
         searchTask?.cancel()
         connectState = .idle
@@ -124,30 +133,57 @@ final class RobotStore {
         return list.filter { seen.insert($0).inserted }
     }
 
-    /// Find the robot without asking: browse Bonjour and probe every remembered address for ~8 s.
+    /// Find the robot without asking: browse Bonjour and probe every known address at once, six rounds (~25 s),
+    /// so an address that is not up yet (Tailscale still connecting) gets another chance.
     func autoConnect() {
         guard client == nil || phase != .connected else { return }
         searchTask?.cancel()
+        lastSearch = Date()
         connectState = .searching
         discovery.start()
         ble.start()
+        startPathMonitor()
         let port = savedPort
         searchTask = Task { [weak self] in
-            var tried = Set<String>()
-            for _ in 0..<16 {
-                guard let self, !Task.isCancelled else { return }
-                for host in self.candidateHosts where !tried.contains(host) {
-                    tried.insert(host)
-                    if await NetworkRobotClient.probe(host: host, port: port, timeout: 3) {
-                        guard !Task.isCancelled else { return }
-                        self.connect(host: host, port: port)
-                        return
+            for round in 0..<6 {
+                guard let hosts = self?.candidateHosts, !Task.isCancelled else { return }
+                let found: String? = await withTaskGroup(of: String?.self) { group in
+                    for host in hosts {
+                        group.addTask { await NetworkRobotClient.probe(host: host, port: port, timeout: 3) ? host : nil }
                     }
+                    for await hit in group where hit != nil {
+                        group.cancelAll()            // first address that answers wins
+                        return hit
+                    }
+                    return nil
                 }
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard let self, !Task.isCancelled else { return }
+                if let found {
+                    self.connect(host: found, port: port)
+                    return
+                }
+                if round < 5 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
             }
             if !Task.isCancelled { self?.connectState = .notFound }
         }
+    }
+
+    @ObservationIgnored private var lastSearch = Date.distantPast
+    @ObservationIgnored private var pathMonitor: NWPathMonitor?
+
+    /// The phone changed network (Wi-Fi to cellular, VPN on): look for the robot again on whatever path works now.
+    private func startPathMonitor() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard path.status == .satisfied else { return }
+            Task { @MainActor in
+                guard let self, !self.isDemo, self.phase != .connected, self.connectState != .searching else { return }
+                self.autoConnect()
+            }
+        }
+        monitor.start(queue: .main)
+        pathMonitor = monitor
     }
 
     func cancelSearch() {
@@ -214,6 +250,7 @@ final class RobotStore {
     func disconnect() {
         drive?.reset()
         let old = client
+        old?.onEvent = nil                 // a replaced client must never change this store again
         client = nil
         state = nil
         tasks = nil
@@ -255,7 +292,11 @@ final class RobotStore {
             phase = p
             if p == .connected { connectState = .idle }
             if p != .connected { drive?.reset() }        // a lost socket never keeps a hold going
-            if case .offline(let why) = p { show(why, .warn) }
+            if case .offline(let why) = p {
+                show(why, .warn)
+                // the address may have changed (new Wi-Fi, away from home): search every path, at most every 30 s
+                if !isDemo && connectState != .searching && Date().timeIntervalSince(lastSearch) > 30 { autoConnect() }
+            }
         case .state(let s, let at):
             state = s
             lastMessageAt = at

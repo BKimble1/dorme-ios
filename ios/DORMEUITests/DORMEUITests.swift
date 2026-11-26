@@ -36,6 +36,20 @@ final class DORMEUITests: XCTestCase {
         }
     }
 
+    /// Waits for an element while answering any system alert that shows up in the meantime.
+    private func appear(_ e: XCUIElement, _ timeout: TimeInterval) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        while Date() < end {
+            if e.exists { return true }
+            let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+            for label in ["Allow", "OK", "Allow While Using App"] where springboard.buttons[label].exists {
+                springboard.buttons[label].tap()
+            }
+            _ = e.waitForExistence(timeout: 2)
+        }
+        return e.exists
+    }
+
     private func text(containing s: String) -> XCUIElement {
         app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", s)).firstMatch
     }
@@ -48,8 +62,9 @@ final class DORMEUITests: XCTestCase {
 
         // Nothing advertises _dorme._tcp here, so the search ends with "not found" and the address option.
         let more = app.buttons["More"]
-        XCTAssertTrue(more.waitForExistence(timeout: 60), "the not-found panel with its menu never appeared")
-        shot("not-found")
+        let ok = appear(more, 75)
+        shot(ok ? "not-found" : "no-not-found-panel")
+        XCTAssertTrue(ok, "the not-found panel with its menu never appeared")
         more.tap()
         app.buttons["Enter address"].tap()
         let field = app.textFields["connect.address"]
@@ -128,7 +143,7 @@ final class DORMEUITests: XCTestCase {
     func testDemoMode() throws {
         allowAlerts()
         let more = app.buttons["More"]
-        XCTAssertTrue(more.waitForExistence(timeout: 60))
+        XCTAssertTrue(appear(more, 75))
         more.tap()
         app.buttons["Try the demo"].tap()
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10))

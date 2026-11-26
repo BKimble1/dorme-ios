@@ -230,7 +230,7 @@ struct RobotSceneView: UIViewRepresentable {
             guard let view else { return }
             let hits = view.hitTest(gesture.location(in: view),
                                     options: [.searchMode: SCNHitTestSearchMode.all.rawValue, .ignoreHiddenNodes: true])
-            let keys = hits.compactMap { partKey(for: $0.node) }
+            let keys = hits.compactMap { partKey(for: $0.node) }.filter { $0 != "a03cover" || coverOpacity > 0 }
             guard let first = keys.first else { return }
             if first == "a03cover" {
                 if coverOpacity >= 0.99, let onCover = parent.onCoverTap { onCover(); return }
@@ -253,9 +253,7 @@ struct RobotSceneView: UIViewRepresentable {
                 coverOpacity = target
                 SCNTransaction.begin()
                 SCNTransaction.animationDuration = 0.35
-                cover.opacity = target
-                SCNTransaction.completionBlock = { cover.isHidden = target == 0 }
-                if target > 0 { cover.isHidden = false }
+                cover.opacity = target          // no completion block: SceneKit calls it off the main thread
                 SCNTransaction.commit()
             }
             for (key, node) in nodes {

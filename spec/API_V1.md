@@ -72,7 +72,7 @@ Robot → client also sends `{"type":"hello","client","state","capabilities"}` o
 
 ## 5. Ack codes
 
-`UNAUTHORIZED, BAD_REQUEST, UNKNOWN_COMMAND, RATE_LIMITED, LOCKED_OUT, BAD_PIN, BUSY, NOT_OWNER, STALE,
+`UNAUTHORIZED, BAD_REQUEST, UNKNOWN_COMMAND, RATE_LIMITED, LOCKED_OUT, BAD_PIN, NO_CODE, BUSY, NOT_OWNER, STALE,
 LINK_DOWN, NOT_READY, FAULT, PLUG, SHUTTING_DOWN, NETWORK_SHARED, TASK_ACTIVE, NO_TASK, UNAVAILABLE,
 CONFIRM_REQUIRED, NO_FAULT, REARM_REFUSED, MOVE_REFUSED, INTERNAL`. Texts: `pi/dorme_coord/api.py`.
 The app adds `TIMEOUT` and `OFFLINE` locally. Driving is refused, in order, for: shutting down, shared

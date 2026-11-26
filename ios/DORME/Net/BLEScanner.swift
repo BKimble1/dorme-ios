@@ -88,7 +88,10 @@ final class BLEScanner {
 
     /// Send sealed Wi-Fi details in framed chunks: byte 0 = index << 1 | last.
     func sendWifi(_ id: UUID, sealed: Data) -> Bool {
-        guard let p = peripherals[id], let ch = wifiChars[id] else { return false }
+        guard let p = peripherals[id], p.state == .connected, let ch = wifiChars[id] else {
+            results[id] = SetupResult(ok: false, message: "Lost the Bluetooth link. Move closer and try again.")
+            return false
+        }
         let limit = max(20, min(180, p.maximumWriteValueLength(for: .withResponse) - 1))
         var chunks: [Data] = []
         var offset = 0
@@ -104,6 +107,22 @@ final class BLEScanner {
         }
         results[id] = SetupResult(ok: nil, message: "Sending")
         return true
+    }
+
+    func clearResult(_ id: UUID) { results[id] = nil }
+
+    /// The link dropped (robot rebooted, out of range): forget its characteristics and connect again.
+    fileprivate func lost(_ p: CBPeripheral) {
+        commands[p.identifier] = nil
+        wifiChars[p.identifier] = nil
+        if let i = devices.firstIndex(where: { $0.id == p.identifier }) {
+            devices[i].canStop = false
+            devices[i].canSetUpWifi = false
+        }
+        if results[p.identifier]?.ok == nil, results[p.identifier] != nil {
+            results[p.identifier] = SetupResult(ok: false, message: "Bluetooth link lost. If DORM-E restarted, try again.")
+        }
+        if wantScan { central?.connect(p) }
     }
 
     fileprivate func scanIfReady() {
@@ -192,6 +211,14 @@ final class BLEScanner {
 
         func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
             peripheral.discoverServices([DormeBLE.service])
+        }
+
+        func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+            MainActor.assumeIsolated { owner?.lost(peripheral) }
+        }
+
+        func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+            MainActor.assumeIsolated { owner?.lost(peripheral) }
         }
 
         func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {

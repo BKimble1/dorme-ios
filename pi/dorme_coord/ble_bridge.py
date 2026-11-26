@@ -272,10 +272,12 @@ def main():  # pragma: no cover - needs BlueZ
             res = get_json(args.api, "/api/v1/ble/result")
         except (OSError, ValueError):
             res = {"ok": None}
-        if res.get("ok") is None and tries[0] < 30:
+        if res.get("ok") is None and tries[0] < 55:
             tries[0] += 1
-            return True                      # keep polling every 2 s while the switch is running
+            return True                      # keep polling every 2 s while the switch runs (join 30 s + rollback 40 s)
         tries[0] = 0
+        if res.get("ok") is None:
+            res = {"ok": False, "message": "No result after 110 s. If DORM-E's Wi-Fi did not change, try again."}
         set_result({k: res.get(k) for k in ("ok", "ssid", "ipv4", "message") if res.get(k) is not None} or {"ok": None})
         return False
 

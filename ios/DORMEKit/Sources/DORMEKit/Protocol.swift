@@ -83,6 +83,7 @@ public enum AckCode {
         "RATE_LIMITED": "Too many messages; slow down.",
         "LOCKED_OUT": "Too many wrong codes; wait and try again.",
         "BAD_PIN": "That code is not correct.",
+        "NO_CODE": "The code on DORM-E's screen expired or was used. Show a new one and scan it.",
         "BUSY": "Another controller or task owns movement.",
         "NOT_OWNER": "This controller does not own movement.",
         "STALE": "That command is out of date. Press again.",

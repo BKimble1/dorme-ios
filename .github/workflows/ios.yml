@@ -99,11 +99,21 @@ jobs:
               for a in test.get("attachments", []):
                   src = os.path.join(d, a["exportedFileName"])
                   name = a.get("suggestedHumanReadableName") or a["exportedFileName"]
-                  name = name.split("_", 1)[0] if name.count("_") and name[:2].isdigit() else name
+                  ext = os.path.splitext(a["exportedFileName"])[1] or ".bin"
+                  if name[:2].isdigit():
+                      name = name.split("_", 1)[0]
+                  safe = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in name)[:80]
+                  test_name = test["testIdentifier"].split("/")[-1].replace("()", "")
                   if os.path.exists(src):
-                      os.replace(src, os.path.join(d, test["testIdentifier"].split("/")[-1].replace("()", "") + "-" + name + (".png" if not name.endswith(".png") else "")))
+                      os.replace(src, os.path.join(d, test_name + "-" + safe + ("" if safe.endswith(ext) else ext)))
           PY
           ls "$RUNNER_TEMP/shots"
+          # crash reports from the simulator, if the app crashed
+          mkdir -p "$RUNNER_TEMP/shots/crashes"
+          find ~/Library/Logs/DiagnosticReports -name "DORME*" -newer ios/project.yml -exec cp {} "$RUNNER_TEMP/shots/crashes/" \; 2>/dev/null || true
+          xcrun xcresulttool export diagnostics --path "$RUNNER_TEMP/UITests.xcresult" --output-path "$RUNNER_TEMP/diag" 2>/dev/null || true
+          find "$RUNNER_TEMP/diag" -iname "*.ips" -o -iname "*crash*" 2>/dev/null | while read f; do cp "$f" "$RUNNER_TEMP/shots/crashes/" 2>/dev/null; done || true
+          ls "$RUNNER_TEMP/shots/crashes"
       - name: Keep the screenshots and logs
         if: always()
         uses: actions/upload-artifact@v4

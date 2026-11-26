@@ -32,15 +32,37 @@ final class NetworkRobotClient: RobotClient {
         config.timeoutIntervalForRequest = 5
         config.waitsForConnectivity = false
         self.session = URLSession(configuration: config)
-        self.token = Keychain.read(account: "\(host):\(port)")
+        // One robot per app: the session token belongs to the robot, not to the address used to reach it, so
+        // pairing at home also works later through Tailscale or after the robot gets a new address.
+        self.token = Keychain.read(account: Self.tokenAccount) ?? Keychain.read(account: "\(host):\(port)")
     }
 
-    private var base: URL { URL(string: Self.origin(host: host, port: port, scheme: "http"))! }
+    static let tokenAccount = "dorme.robot"
 
-    /// http://host:port, bracketing IPv6 literals.
+    private var base: URL {
+        URL(string: Self.origin(host: host, port: port, scheme: "http")) ?? URL(string: "http://invalid.invalid")!
+    }
+
+    /// http://host:port, bracketing IPv6 literals (a zone like %en0 is escaped as %25en0).
     static func origin(host: String, port: Int, scheme: String) -> String {
-        let h = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+        var h = host
+        if h.contains(":") && !h.hasPrefix("[") { h = "[\(h.replacingOccurrences(of: "%", with: "%25"))]" }
         return "\(scheme)://\(h):\(port)"
+    }
+
+    private func forgetToken() {
+        token = nil
+        Keychain.delete(account: Self.tokenAccount)
+        Keychain.delete(account: displayName)
+    }
+
+    /// A 401 on plain HTTP means the robot no longer knows this phone: pair again (instead of "can't reach").
+    private func checkAuth(_ response: URLResponse?) -> Bool {
+        guard (response as? HTTPURLResponse)?.statusCode == 401, token != nil else { return true }
+        forgetToken()
+        closeSocket(reason: nil)
+        onEvent?(.phase(.pairingRequired))
+        return false
     }
 
     /// Quick check that a DORM-E answers at host:port (used to pick among discovered/remembered addresses).
@@ -59,14 +81,15 @@ final class NetworkRobotClient: RobotClient {
     /// Authenticated GET decoded with the shared decoder; nil on any failure.
     func getJSON<T: Decodable>(_ path: String, as type: T.Type, timeout: Double = 10) async -> T? {
         guard let (data, response) = try? await session.data(for: request(path, timeout: timeout)),
-              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+              checkAuth(response), (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return try? DORMEJSON.decoder.decode(T.self, from: data)
     }
 
     /// Authenticated POST answered with an ack.
     func post(_ path: String, body: [String: Any] = [:], timeout: Double = 15) async -> Ack {
         do {
-            let (data, _) = try await session.data(for: request(path, method: "POST", body: body, timeout: timeout))
+            let (data, response) = try await session.data(for: request(path, method: "POST", body: body, timeout: timeout))
+            guard checkAuth(response) else { return .failure(nil, "UNAUTHORIZED", "Pair with DORM-E again.") }
             return try DORMEJSON.decoder.decode(Ack.self, from: data)
         } catch {
             return .failure(nil, "OFFLINE", "Can't reach the robot.")
@@ -105,6 +128,7 @@ final class NetworkRobotClient: RobotClient {
         struct Info: Decodable { var api: Int; var mode: String; var simulated: Bool; var paired: Bool }
         do {
             let (data, response) = try await session.data(for: request("api/v1/info", timeout: 8))
+            guard wantConnected else { return }          // replaced or disconnected while waiting
             guard (response as? HTTPURLResponse)?.statusCode == 200 else {
                 onEvent?(.phase(.unavailable("\(host) answered, but not as a DORM-E robot.")))
                 return
@@ -116,6 +140,7 @@ final class NetworkRobotClient: RobotClient {
             }
             if !info.paired { token = nil }
         } catch {
+            guard wantConnected else { return }
             let code = (error as? URLError)?.code.rawValue
             onEvent?(.phase(.offline("Can't reach \(host)\(code.map { " (\($0))" } ?? "")")))
             scheduleReconnect()
@@ -167,8 +192,7 @@ final class NetworkRobotClient: RobotClient {
                 guard ws === task else { return }
                 let status = (task.response as? HTTPURLResponse)?.statusCode
                 if status == 401 {
-                    token = nil
-                    Keychain.delete(account: displayName)
+                    forgetToken()
                     closeSocket(reason: nil)
                     onEvent?(.phase(.pairingRequired))
                 } else {
@@ -240,7 +264,7 @@ final class NetworkRobotClient: RobotClient {
             let ack = try DORMEJSON.decoder.decode(Ack.self, from: data)
             if ack.ok, let t = ack.result.lookup("token")?.string {
                 token = t
-                Keychain.save(t, account: displayName)
+                Keychain.save(t, account: Self.tokenAccount)
                 openSocket()
             }
             return ack
