@@ -110,6 +110,7 @@ final class DORMEUITests: XCTestCase {
         let m1 = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Motor M1'")).firstMatch
         XCTAssertTrue(m1.waitForExistence(timeout: 5), "search for 'motor' did not list motor M1")
         shot("search-motor")
+        search.tap()
         search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 8) + "temperature")
         let pi = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Raspberry Pi'")).firstMatch
         XCTAssertTrue(pi.waitForExistence(timeout: 5), "search for 'temperature' did not list the Pi")

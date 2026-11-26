@@ -75,7 +75,7 @@ struct RobotSceneView: UIViewRepresentable {
                 m.lightingModel = .physicallyBased
             }
         }
-        scene.lightingEnvironment.contents = studioEnvironment()
+        scene.lightingEnvironment.contents = PartStudio.environment
         scene.lightingEnvironment.intensity = 0.75
 
         let key = SCNNode()
@@ -136,20 +136,6 @@ struct RobotSceneView: UIViewRepresentable {
         root.addChildNode(cameraNode)
         view.pointOfView = cameraNode
         view.defaultCameraController.target = center
-    }
-
-    /// A soft studio: bright overhead softbox, light-grey walls, darker floor (equirectangular, 256 x 128).
-    static func studioEnvironment() -> UIImage {
-        let w = 256.0, h = 128.0
-        return FaceRenderer.rgba8(size: CGSize(width: w, height: h), scale: 1) { g in
-            let colors = [UIColor(white: 1.0, alpha: 1).cgColor, UIColor(white: 0.82, alpha: 1).cgColor,
-                          UIColor(white: 0.62, alpha: 1).cgColor, UIColor(white: 0.30, alpha: 1).cgColor] as CFArray
-            let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.35, 0.52, 1])!
-            g.drawLinearGradient(grad, start: .zero, end: CGPoint(x: 0, y: h), options: [])
-            UIColor(white: 1, alpha: 0.9).setFill()                    // two softboxes
-            g.fillEllipse(in: CGRect(x: w * 0.10, y: h * 0.08, width: w * 0.22, height: h * 0.16))
-            g.fillEllipse(in: CGRect(x: w * 0.60, y: h * 0.12, width: w * 0.16, height: h * 0.12))
-        }
     }
 
     @MainActor

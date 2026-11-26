@@ -5,17 +5,33 @@ import UIKit
 /// One part on its own, on white, like a product photo (2026-11-26). The part is the detailed model from
 /// Resources/DORME_robot.usdz (cad/export_app_model.py + cad/app_model/), so the "photo" is a render of the same
 /// model the home page shows: real colours and layouts from the makers' drawings, not a vendor photograph.
-@MainActor
 enum PartStudio {
+    /// All scene work happens on this queue: list thumbnails render here so typing in search never waits for them.
+    private static let queue = DispatchQueue(label: "dorme.partstudio", qos: .userInitiated)
     /// The model, loaded once and only read from (parts are cloned out of it).
-    private static let template: SCNScene? = {
+    nonisolated(unsafe) private static let template: SCNScene? = {
         guard let url = Bundle.main.url(forResource: "DORME_robot", withExtension: "usdz") else { return nil }
         return try? SCNScene(url: url, options: nil)
     }()
-    private static var thumbs: [String: UIImage] = [:]
+    nonisolated(unsafe) private static var thumbs: [String: UIImage] = [:]
+    static let environment: UIImage = studioEnvironment()
+
+    /// A soft studio: bright overhead softbox, light-grey walls, darker floor (equirectangular, 256 x 128).
+    static func studioEnvironment() -> UIImage {
+        let w = 256.0, h = 128.0
+        return FaceRenderer.rgba8(size: CGSize(width: w, height: h), scale: 1) { g in
+            let colors = [UIColor(white: 1.0, alpha: 1).cgColor, UIColor(white: 0.82, alpha: 1).cgColor,
+                          UIColor(white: 0.62, alpha: 1).cgColor, UIColor(white: 0.30, alpha: 1).cgColor] as CFArray
+            let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.35, 0.52, 1])!
+            g.drawLinearGradient(grad, start: .zero, end: CGPoint(x: 0, y: h), options: [])
+            UIColor(white: 1, alpha: 0.9).setFill()                    // two softboxes
+            g.fillEllipse(in: CGRect(x: w * 0.10, y: h * 0.08, width: w * 0.22, height: h * 0.16))
+            g.fillEllipse(in: CGRect(x: w * 0.60, y: h * 0.12, width: w * 0.16, height: h * 0.12))
+        }
+    }
 
     /// A copy of one part, centred on the origin, materials set up like the main view.
-    static func part(_ nodeName: String) -> (node: SCNNode, radius: Float)? {
+    private static func part(_ nodeName: String) -> (node: SCNNode, radius: Float)? {
         guard let src = template?.rootNode.childNode(withName: nodeName, recursively: true) else { return nil }
         let copy = src.clone()
         copy.transform = src.worldTransform
@@ -44,10 +60,14 @@ enum PartStudio {
 
     /// A white studio scene with the part, a camera at a three-quarter view and a soft floor shadow.
     static func scene(for nodeName: String, spin: Bool) -> (SCNScene, SCNNode)? {
+        queue.sync { makeScene(nodeName, spin: spin) }
+    }
+
+    private static func makeScene(_ nodeName: String, spin: Bool) -> (SCNScene, SCNNode)? {
         guard let (part, r) = part(nodeName) else { return nil }
         let scene = SCNScene()
         scene.background.contents = UIColor.white
-        scene.lightingEnvironment.contents = RobotSceneView.studioEnvironment()
+        scene.lightingEnvironment.contents = environment
         scene.lightingEnvironment.intensity = 0.95
         let turn = SCNNode()
         turn.addChildNode(part)
@@ -93,18 +113,21 @@ enum PartStudio {
         return (scene, camNode)
     }
 
-    /// A small cached "product shot" for lists.
-    static func thumbnail(_ nodeName: String, size: CGFloat = 96) -> UIImage? {
-        if let t = thumbs[nodeName] { return t }
-        guard let (scene, cam) = scene(for: nodeName, spin: false) else { return nil }
-        let renderer = SCNRenderer(device: MTLCreateSystemDefaultDevice(), options: nil)
-        renderer.scene = scene
-        renderer.pointOfView = cam
-        renderer.autoenablesDefaultLighting = false
-        let px = size * UIScreen.main.scale
-        let img = renderer.snapshot(atTime: 0, with: CGSize(width: px, height: px), antialiasingMode: .multisampling4X)
-        thumbs[nodeName] = img
-        return img
+    /// A small cached "product shot" for lists, rendered off the main thread.
+    static func thumbnail(_ nodeName: String, pixels: CGFloat) async -> UIImage? {
+        await withCheckedContinuation { (done: CheckedContinuation<UIImage?, Never>) in
+            queue.async {
+                if let t = thumbs[nodeName] { done.resume(returning: t); return }
+                guard let (scene, cam) = makeScene(nodeName, spin: false) else { done.resume(returning: nil); return }
+                let renderer = SCNRenderer(device: MTLCreateSystemDefaultDevice(), options: nil)
+                renderer.scene = scene
+                renderer.pointOfView = cam
+                renderer.autoenablesDefaultLighting = false
+                let img = renderer.snapshot(atTime: 0, with: CGSize(width: pixels, height: pixels), antialiasingMode: .multisampling4X)
+                thumbs[nodeName] = img
+                done.resume(returning: img)
+            }
+        }
     }
 }
 
@@ -138,6 +161,7 @@ struct PartThumb: View {
     let part: CatalogPart
     var size: CGFloat = 46
     @State private var image: UIImage?
+    @Environment(\.displayScale) private var scale
 
     var body: some View {
         ZStack {
@@ -151,7 +175,7 @@ struct PartThumb: View {
         .frame(width: size, height: size)
         .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
         .task(id: part.id) {
-            if let node = part.node { image = PartStudio.thumbnail(node) }
+            if let node = part.node { image = await PartStudio.thumbnail(node, pixels: 96 * scale) }
         }
     }
 
