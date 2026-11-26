@@ -21,9 +21,10 @@ REFRESH_S = 2.0
 HOLD_S = 6.0
 
 # Coordinator face names -> states the installed bootstrap face can draw.
-# The bootstrap face has no "moving" look; "listening" (wider eyes) is the closest. Approximation.
+# 2026-11-26 (face rev 2): the installed face (dorme_robot/face/face.py at /opt/dorme/face.py) has a "moving"
+# look that turns the eyes toward the travel direction (state file field "dir": F, B, L or R).
 FACE_MAP = {
-    "idle": "idle", "listening": "listening", "moving": "listening", "happy": "happy",
+    "idle": "idle", "listening": "listening", "moving": "moving", "happy": "happy",
     "puzzled": "puzzled", "low_energy": "low_energy", "sleepy": "sleepy", "fault": "fault",
     "pairing": "pairing",   # 2026-11-25: big on-screen one-time code (needs the face with the "pairing" state)
     "note": "note",         # 2026-11-26: owner's message + countdown (face state "note", fields text/until)
@@ -55,7 +56,7 @@ class FaceAdapter:
             return {"status": "error", "reason": self.error}
         return {"status": "ok", "reason": None}
 
-    def set(self, name, transient_s=None, code=None, qr=None, note=None):
+    def set(self, name, transient_s=None, code=None, qr=None, note=None, direction=None):
         """Write the face state if it changed (or needs a refresh). Returns True if written.
         code: six digits shown by the "pairing" state only."""
         state = FACE_MAP.get(name, "idle")
@@ -70,6 +71,8 @@ class FaceAdapter:
             state = "idle"
         if state != "note":
             note = None
+        if state != "moving" or direction not in ("F", "B", "L", "R"):
+            direction = None
         now = self.clock()
         if state == "idle":
             if self.last_written in (None, "idle"):
@@ -77,6 +80,7 @@ class FaceAdapter:
             expires = 0
         else:
             if (state == self.last_written and code == self.last_code and note == self.last_note
+                    and direction == getattr(self, "last_dir", None)
                     and transient_s is None and now - self.last_write_at < REFRESH_S):
                 return False
             expires = now + (transient_s if transient_s is not None else HOLD_S)
@@ -85,13 +89,15 @@ class FaceAdapter:
             data["code"] = code
         if qr:
             data["qr"] = qr
+        if direction:
+            data["dir"] = direction
         if note:
             data["text"] = note["text"]
             if note.get("until"):
                 data["until"] = note["until"]
         written = self._write(data, state, now)
         if written:
-            self.last_code, self.last_note = code, note
+            self.last_code, self.last_note, self.last_dir = code, note, direction
         return written
 
     def _write(self, data, state, now):

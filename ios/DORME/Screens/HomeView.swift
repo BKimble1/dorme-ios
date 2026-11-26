@@ -60,6 +60,7 @@ struct HomeView: View {
     private var modelCard: some View {
         ZStack(alignment: .bottomTrailing) {
             RobotSceneView(statuses: statuses, showCover: showCover, face: liveFace, note: store.state?.screen?.note,
+                           faceDirection: store.state?.motion.direction,
                            onTap: { path.append($0) }, onCoverTap: { showCover = false })
                 .frame(height: 340)
             Button { showCover.toggle() } label: {
@@ -182,7 +183,11 @@ struct PartList: View {
                 let h = store.state?.health?.part(part.id)
                 Button { open(part.id) } label: {
                     HStack(spacing: 12) {
-                        StatusDot(level: Level(partStatus: h?.s))
+                        PartThumb(part: part)
+                            .overlay(alignment: .bottomTrailing) {
+                                StatusDot(level: Level(partStatus: h?.s)).padding(2)
+                                    .background(Circle().fill(Color.white)).offset(x: 4, y: 4)
+                            }
                         VStack(alignment: .leading, spacing: 2) {
                             Text(part.name).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.ink)
                             Text(part.category.capitalized).font(.caption).foregroundStyle(Theme.inkTertiary)

@@ -522,7 +522,9 @@ class Coordinator:
             try:
                 name = self.compute_face()
                 note = self.screen_note() if name == "note" else None
-                self.face.set(name, code=self.pairing_code() if name == "pairing" else None,
+                s = self.esp["stat"] or {}
+                direction = {"FF": "F", "RR": "B", "RF": "L", "FR": "R"}.get(s.get("dir")) if name == "moving" else None
+                self.face.set(name, direction=direction, code=self.pairing_code() if name == "pairing" else None,
                               qr=self.pairing[2] if name == "pairing" and self.pairing else None,
                               note={"text": note["text"], "until": note["until"]} if note else None)
                 state = self.state()

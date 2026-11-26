@@ -98,7 +98,7 @@ REARM_CLASSES = ("phone_or_voice", "phone", "service", "auto")
 NOT_MEASURED = ("current", "runtime", "temperature", "motor_rpm", "charging_status", "wheel_speed")
 
 # ---- face states understood by the installed bootstrap face (dorme_pi_bootstrap/face.py) ----
-BOOTSTRAP_FACE_STATES = ("idle", "listening", "happy", "puzzled", "low_energy", "sleepy", "fault", "pairing", "note")
+BOOTSTRAP_FACE_STATES = ("idle", "listening", "moving", "happy", "puzzled", "low_energy", "sleepy", "fault", "pairing", "note")
 
 # ---- staleness rules the app applies (spec section 8, AUTH values) ----
 STALE_AFTER_MS = 3000

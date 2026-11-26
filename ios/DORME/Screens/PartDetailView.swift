@@ -16,10 +16,19 @@ struct PartDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if part?.node != nil {
+                if let node = part?.node {
+                    // the part on its own, on white, like a product photo (a render of the detailed model)
+                    PartProductView(nodeName: node)
+                        .frame(height: 270)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
+                        .overlay(alignment: .bottomLeading) {
+                            Text("3D model · drag to turn").font(.caption2).foregroundStyle(Theme.inkTertiary).padding(12)
+                        }
+                    Text("Where it is").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.inkSecondary)
                     RobotSceneView(statuses: [:], selected: partID,
                                    face: store.phase == .connected || store.isDemo ? store.state?.face.state : nil)
-                        .frame(height: 240)
+                        .frame(height: 200)
                         .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
                         .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
                 }

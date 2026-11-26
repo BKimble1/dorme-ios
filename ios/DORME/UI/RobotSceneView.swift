@@ -17,6 +17,8 @@ struct RobotSceneView: UIViewRepresentable {
     var face: String?
     /// The owner's message while the face state is "note".
     var note: ScreenNote? = nil
+    /// Travel direction (F, B, L, R) while moving: the eyes look that way, as on the robot.
+    var faceDirection: String? = nil
     var onTap: ((String) -> Void)?
     var onCoverTap: (() -> Void)?
 
@@ -137,7 +139,7 @@ struct RobotSceneView: UIViewRepresentable {
     }
 
     /// A soft studio: bright overhead softbox, light-grey walls, darker floor (equirectangular, 256 x 128).
-    private static func studioEnvironment() -> UIImage {
+    static func studioEnvironment() -> UIImage {
         let w = 256.0, h = 128.0
         return FaceRenderer.rgba8(size: CGSize(width: w, height: h), scale: 1) { g in
             let colors = [UIColor(white: 1.0, alpha: 1).cgColor, UIColor(white: 0.82, alpha: 1).cgColor,
@@ -157,10 +159,14 @@ struct RobotSceneView: UIViewRepresentable {
         private var nodes: [String: SCNNode] = [:]       // PartKey.norm(id) -> node
         private var applied: [String: String] = [:]
         private var screen: SCNMaterial?
+        /// S2's LED ring (USD material "led_ring"): yellow while the robot is on, dark when it is off.
+        private var ledRings: [SCNMaterial] = []
+        private var ledOn: Bool?
         private var faceTimer: Timer?
         private let started = Date()
         private var faceState: String?
         private var faceSince = Date()
+        private let animator = FaceAnimator()
         private var coverOpacity: CGFloat = 1
 
         init(_ parent: RobotSceneView) { self.parent = parent }
@@ -178,6 +184,9 @@ struct RobotSceneView: UIViewRepresentable {
                         n.geometry = geo
                     }
                 }
+                for m in node.geometry?.materials ?? [] where (m.name ?? "").lowercased().contains("led_ring") {
+                    self.ledRings.append(m)
+                }
                 if node.name == "LCD_screen", let m = node.geometry?.firstMaterial {
                     m.lightingModel = .constant
                     m.diffuse.contents = UIColor.black
@@ -193,7 +202,7 @@ struct RobotSceneView: UIViewRepresentable {
 
         func startFace() {
             drawFace(force: true)
-            faceTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            faceTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.drawFace() }
             }
         }
@@ -213,7 +222,8 @@ struct RobotSceneView: UIViewRepresentable {
             let now = Date()
             screen.diffuse.contents = FaceRenderer.image(state: state, elapsed: now.timeIntervalSince(started) + 6,
                                                           stateElapsed: now.timeIntervalSince(faceSince), scale: 1.5,
-                                                          note: parent.note)
+                                                          note: parent.note, direction: parent.faceDirection,
+                                                          animator: animator)
         }
 
         // MARK: Taps
@@ -246,6 +256,25 @@ struct RobotSceneView: UIViewRepresentable {
         // MARK: Status colours and the cover
 
         func apply() {
+            let on = parent.face != nil
+            if on != ledOn {
+                ledOn = on
+                // collect again: index() copied the materials of every catalogued part after the first pass
+                if let root = view?.scene?.rootNode {
+                    ledRings = []
+                    root.enumerateHierarchy { n, _ in
+                        for m in n.geometry?.materials ?? [] where (m.name ?? "").lowercased().contains("led_ring") {
+                            self.ledRings.append(m)
+                        }
+                    }
+                }
+                for m in ledRings {
+                    m.emission.contents = on ? UIColor(red: 1, green: 0.78, blue: 0.16, alpha: 1) : UIColor.black
+                    m.emission.intensity = on ? 1.2 : 0
+                    m.diffuse.contents = on ? UIColor(red: 1, green: 0.86, blue: 0.35, alpha: 1)
+                                            : UIColor(red: 0.42, green: 0.36, blue: 0.16, alpha: 1)
+                }
+            }
             let selected = parent.selected.map(PartKey.norm)
             let insideIssue = parent.statuses.contains { key, s in (s == "fault" || s == "warn") && !RobotSceneView.outside.contains(key) }
             let insideSelected = selected.map { !RobotSceneView.outside.contains($0) } ?? false
@@ -270,7 +299,7 @@ struct RobotSceneView: UIViewRepresentable {
                 }
                 node.enumerateHierarchy { n, _ in
                     guard n.name != "LCD_screen" else { return }
-                    for material in n.geometry?.materials ?? [] {
+                    for material in n.geometry?.materials ?? [] where !(material.name ?? "").lowercased().contains("led_ring") {
                         material.emission.contents = color
                         material.emission.intensity = color == .black ? 0 : 0.7
                     }

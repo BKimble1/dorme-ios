@@ -9,8 +9,8 @@ enum Theme {
     static let inkSecondary = Color(red: 0.07, green: 0.07, blue: 0.07).opacity(0.58)
     static let inkTertiary = Color(red: 0.07, green: 0.07, blue: 0.07).opacity(0.38)
     static let hairline = Color.black.opacity(0.08)
-    static let accent = Color(red: 0.93, green: 0.47, blue: 0.22)          // the face's mouth orange
-    static let eye = Color(red: 0.80, green: 0.94, blue: 1.0)             // the face's pale blue
+    static let accent = Color(red: 0.93, green: 0.47, blue: 0.22)          // warm accent (selection)
+    static let eye = Color(red: 0.843, green: 0.953, blue: 1.0)           // the face's eye colour (face rev 2)
     static let stop = Color(red: 0.84, green: 0.15, blue: 0.13)
     static let good = Color(red: 0.20, green: 0.58, blue: 0.34)
     static let warn = Color(red: 0.86, green: 0.55, blue: 0.10)
