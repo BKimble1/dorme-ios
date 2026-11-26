@@ -137,9 +137,7 @@ struct RobotSceneView: UIViewRepresentable {
     /// A soft studio: bright overhead softbox, light-grey walls, darker floor (equirectangular, 256 x 128).
     private static func studioEnvironment() -> UIImage {
         let w = 256.0, h = 128.0
-        let r = UIGraphicsImageRenderer(size: CGSize(width: w, height: h))
-        return r.image { ctx in
-            let g = ctx.cgContext
+        return FaceRenderer.rgba8(size: CGSize(width: w, height: h), scale: 1) { g in
             let colors = [UIColor(white: 1.0, alpha: 1).cgColor, UIColor(white: 0.82, alpha: 1).cgColor,
                           UIColor(white: 0.62, alpha: 1).cgColor, UIColor(white: 0.30, alpha: 1).cgColor] as CFArray
             let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.35, 0.52, 1])!

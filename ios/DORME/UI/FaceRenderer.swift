@@ -25,17 +25,30 @@ enum FaceRenderer {
     /// One frame. `elapsed`: seconds since the face started; `stateElapsed`: seconds in this state.
     /// `state == nil` is a dark screen (robot off or not connected).
     static func image(state: String?, elapsed: Double, stateElapsed: Double, scale: CGFloat = 2) -> UIImage {
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = scale
-        format.opaque = true
-        return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
-            let g = ctx.cgContext
+        rgba8(size: size, scale: scale) { g in
             UIColor.black.setFill()
             g.fill(CGRect(origin: .zero, size: size))
             guard let state = lcdState(state) else { return }
             if state == "pairing" { drawPairing(g); return }
             draw(g, state: state, elapsed: elapsed, stateElapsed: stateElapsed)
         }
+    }
+
+    /// An 8-bit sRGB RGBA bitmap drawn with UIKit (top-left origin). SceneKit turns images into Metal textures;
+    /// UIGraphicsImageRenderer's wide-colour/opaque formats can map to a pixel format Metal rejects (abort seen in
+    /// the simulator run 2026-11-26), so textures are always made this way.
+    static func rgba8(size: CGSize, scale: CGFloat, _ draw: (CGContext) -> Void) -> UIImage {
+        let w = Int(size.width * scale), h = Int(size.height * scale)
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let g = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return UIImage() }
+        g.translateBy(x: 0, y: CGFloat(h))
+        g.scaleBy(x: scale, y: -scale)
+        UIGraphicsPushContext(g)
+        draw(g)
+        UIGraphicsPopContext()
+        guard let cg = g.makeImage() else { return UIImage() }
+        return UIImage(cgImage: cg, scale: scale, orientation: .up)
     }
 
     private static func draw(_ g: CGContext, state: String, elapsed: Double, stateElapsed: Double) {
