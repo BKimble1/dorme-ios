@@ -135,7 +135,7 @@ final class ScreenDesign {
     }
 
     func textLayout(_ t: String) -> (UIFont, CGRect) {
-        let maxW: CGFloat = 440, maxH: CGFloat = 280
+        let maxW: CGFloat = 440, maxH: CGFloat = 200      // same as face.py _fit_text
         var chosen = font.uiFont(20)
         var size = CGSize(width: maxW, height: 40)
         for s in [120, 104, 92, 80, 70, 60, 52, 44, 38, 32, 28, 24, 20] as [CGFloat] {

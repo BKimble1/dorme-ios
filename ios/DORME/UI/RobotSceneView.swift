@@ -330,10 +330,10 @@ struct RobotSceneView: UIViewRepresentable {
             let target = view.defaultCameraController.target
             if exploded {
                 cameraHome = (cam.position, target)
-                let lift: Float = 0.085
+                let lift: Float = 0.10
                 let newTarget = SCNVector3(target.x, target.y + lift, target.z)
                 let d = SIMD3<Float>(cam.position.x - target.x, cam.position.y - target.y, cam.position.z - target.z)
-                let p = SIMD3<Float>(newTarget.x, newTarget.y, newTarget.z) + d * 1.55
+                let p = SIMD3<Float>(newTarget.x, newTarget.y, newTarget.z) + d * 2.05      // the exploded robot is about twice as tall
                 cam.position = SCNVector3(p.x, p.y, p.z)
                 cam.look(at: newTarget)
                 view.defaultCameraController.target = newTarget
