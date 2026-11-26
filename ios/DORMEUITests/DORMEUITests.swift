@@ -119,9 +119,10 @@ final class DORMEUITests: XCTestCase {
         sleep(2)
         shot("part-pi")
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        let clear = app.buttons["Cancel"].firstMatch
-        if clear.waitForExistence(timeout: 2) { clear.tap() }
-        else { search.tap(); search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12)) }
+        // leave search: iOS 26 shows a close (X) button next to the field, earlier systems "Cancel"
+        let leave = app.buttons.matching(NSPredicate(format: "label IN {'Cancel', 'Close'}")).firstMatch
+        if leave.waitForExistence(timeout: 3) { leave.tap() }
+        XCTAssertTrue(appear(app.buttons["Settings"], 10), "home toolbar did not come back after search")
 
         // Settings.
         app.buttons["Settings"].tap()

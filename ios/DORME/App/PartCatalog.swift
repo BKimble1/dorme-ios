@@ -86,7 +86,10 @@ extension Level {
 
 enum ValueFormat {
     /// Readable label and value for one entry of a part's `values` (keys arrive camelCased by the decoder).
-    static func row(_ key: String, _ value: JSONValue) -> (String, String) {
+    static func row(_ rawKey: String, _ value: JSONValue) -> (String, String) {
+        // keys may arrive snake_case (dictionary keys are not converted by the decoder): disk_free_mb -> diskFreeMb
+        let parts = rawKey.split(separator: "_").map(String.init)
+        let key = parts.isEmpty ? rawKey : parts[0] + parts.dropFirst().map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined()
         let labels: [String: (String, String)] = [
             "socTempC": ("Temperature", "°C"), "memAvailableMb": ("Free memory", "MB"), "diskFreeMb": ("Free storage", "MB"),
             "load1m": ("Load", ""), "uptimeS": ("Uptime", ""), "throttled": ("Throttling", ""),
@@ -97,7 +100,8 @@ enum ValueFormat {
             "motorRailV": ("Motor rail", "V"), "distanceCm": ("Distance", "cm"), "reason": ("Note", ""),
             "card": ("Device", ""), "note": ("Note", ""), "pwm": ("Drive output", "%"), "service": ("Service", ""),
         ]
-        let (label, unit) = labels[key] ?? (key.prefix(1).uppercased() + key.dropFirst(), "")
+        let plain = rawKey.replacingOccurrences(of: "_", with: " ")
+        let (label, unit) = labels[key] ?? (plain.prefix(1).uppercased() + plain.dropFirst(), "")
         var text: String
         switch value {
         case .number(let n):
