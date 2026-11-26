@@ -46,6 +46,10 @@ public struct RobotCommand: Sendable, Equatable {
         .init("task.cancel", id.map { ["task_id": .string($0)] } ?? [:])
     }
     public static func rearm() -> RobotCommand { .init("fault.rearm", ["confirm": .bool(true)]) }
+    /// A message on the robot's screen, with a countdown when `seconds` > 0. Empty text clears it.
+    public static func screenNote(_ text: String, seconds: Int = 0) -> RobotCommand {
+        .init("screen.note", ["text": .string(text), "seconds": .number(Double(seconds))])
+    }
 
     /// Wire form: {"v":1,"type":"command","id":..,"name":..,"args":{..}}. Keys are written as-is.
     public func wireData() throws -> Data {
@@ -84,6 +88,7 @@ public enum AckCode {
         "LOCKED_OUT": "Too many wrong codes; wait and try again.",
         "BAD_PIN": "That code is not correct.",
         "NO_CODE": "The code on DORM-E's screen expired or was used. Show a new one and scan it.",
+        "PAIR_CLOSED": "Bluetooth pairing is closed. Switch DORM-E off and on, then pair within 10 minutes, or use Add another phone on a paired phone.",
         "BUSY": "Another controller or task owns movement.",
         "NOT_OWNER": "This controller does not own movement.",
         "STALE": "That command is out of date. Press again.",

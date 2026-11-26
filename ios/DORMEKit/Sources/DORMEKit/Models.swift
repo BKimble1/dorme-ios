@@ -82,7 +82,32 @@ public struct RobotState: Codable, Equatable, Sendable {
     public var peripherals: Peripherals
     public var network: NetworkInfo
     public var health: HealthSummary? = nil
+    public var screen: ScreenInfo? = nil
     public var notMeasured: [String]
+}
+
+/// Phones paired with the robot (GET /api/v1/pair/phones). Tokens never leave the robot.
+public struct PairedPhones: Codable, Equatable, Sendable {
+    public struct Phone: Codable, Equatable, Sendable, Identifiable {
+        public let id: String
+        public let name: String?
+        public let createdAt: Double?
+    }
+    public let phones: [Phone]
+    public let this: String?
+    public let bluetoothPairingOpen: Bool?
+}
+
+/// What the owner put on the robot's screen (command screen.note), 2026-11-26.
+public struct ScreenInfo: Codable, Equatable, Sendable {
+    public var note: ScreenNote?
+    public init(note: ScreenNote?) { self.note = note }
+}
+
+public struct ScreenNote: Codable, Equatable, Sendable {
+    public var text: String
+    public var until: Double?          // unix seconds the countdown ends, or nil for a plain message
+    public init(text: String, until: Double?) { self.text = text; self.until = until }
 }
 
 public struct RobotInfo: Codable, Equatable, Sendable {

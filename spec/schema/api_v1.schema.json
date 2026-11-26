@@ -61,7 +61,7 @@
                   "properties": {"plug": {"type": ["boolean", "null"]}, "shutting_down": {"type": ["string", "null"]},
                                  "motor_rail_on": {"type": ["boolean", "null"]}, "motor_rail_v": {"type": ["number", "null"]}}},
         "face": {"type": "object", "required": ["state", "adapter"],
-                 "properties": {"state": {"enum": ["idle", "listening", "moving", "happy", "puzzled", "low_energy", "sleepy", "fault", "pairing"]},
+                 "properties": {"state": {"enum": ["idle", "listening", "moving", "happy", "puzzled", "low_energy", "sleepy", "fault", "pairing", "note"]},
                                 "adapter": {"type": "string"}, "adapter_reason": {"type": ["string", "null"]}}},
         "peripherals": {"type": "object", "required": ["camera", "audio", "ble", "sonar"],
                         "properties": {"camera": {"$ref": "#/$defs/peripheral"}, "audio": {"$ref": "#/$defs/peripheral"},
@@ -73,7 +73,7 @@
     "command": {
       "type": "object", "required": ["v", "type", "id", "name", "args"],
       "properties": {"v": {"enum": [1]}, "type": {"enum": ["command"]}, "id": {"type": "string"},
-                     "name": {"enum": ["stop", "drive.claim", "drive.hold", "drive.release", "task.start", "task.cancel", "fault.rearm", "state.get", "capabilities.get"]},
+                     "name": {"enum": ["stop", "drive.claim", "drive.hold", "drive.release", "task.start", "task.cancel", "fault.rearm", "state.get", "capabilities.get", "screen.note"]},
                      "args": {"type": "object"}}
     },
     "ack": {

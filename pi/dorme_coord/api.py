@@ -20,9 +20,13 @@ CMD_TASK_CANCEL = "task.cancel"
 CMD_FAULT_REARM = "fault.rearm"
 CMD_STATE_GET = "state.get"
 CMD_CAPABILITIES_GET = "capabilities.get"
+CMD_SCREEN_NOTE = "screen.note"     # 2026-11-26: message (+ optional countdown) on the robot's screen
 
 COMMANDS = (CMD_STOP, CMD_DRIVE_CLAIM, CMD_DRIVE_HOLD, CMD_DRIVE_RELEASE, CMD_TASK_START,
-            CMD_TASK_CANCEL, CMD_FAULT_REARM, CMD_STATE_GET, CMD_CAPABILITIES_GET)
+            CMD_TASK_CANCEL, CMD_FAULT_REARM, CMD_STATE_GET, CMD_CAPABILITIES_GET, CMD_SCREEN_NOTE)
+NOTE_MAX_CHARS = 60
+NOTE_MAX_SECONDS = 4 * 3600         # countdown up to 4 h
+NOTE_DONE_SHOW_S = 60               # "00:00" stays this long after a countdown ends
 # Commands anyone on the network (or BLE) may send without pairing. Only stop.
 UNAUTHENTICATED_COMMANDS = {CMD_STOP}
 
@@ -36,6 +40,8 @@ DIRECTION_NAMES = {"F": "forward", "B": "back", "L": "left", "R": "right"}
 # ---- acknowledgement codes (ack.code when ok is false) ----
 ACK_CODES = {
     "UNAUTHORIZED": "Pair with the robot first.",
+    "PAIR_CLOSED": "Bluetooth pairing is closed. Turn DORM-E off and on, then try within 10 minutes, "
+                   "or use Add another phone on a phone that is already paired.",
     "BAD_REQUEST": "The request was malformed.",
     "UNKNOWN_COMMAND": "The robot does not know this command.",
     "RATE_LIMITED": "Too many messages; slow down.",
@@ -92,7 +98,7 @@ REARM_CLASSES = ("phone_or_voice", "phone", "service", "auto")
 NOT_MEASURED = ("current", "runtime", "temperature", "motor_rpm", "charging_status", "wheel_speed")
 
 # ---- face states understood by the installed bootstrap face (dorme_pi_bootstrap/face.py) ----
-BOOTSTRAP_FACE_STATES = ("idle", "listening", "happy", "puzzled", "low_energy", "sleepy", "fault", "pairing")
+BOOTSTRAP_FACE_STATES = ("idle", "listening", "happy", "puzzled", "low_energy", "sleepy", "fault", "pairing", "note")
 
 # ---- staleness rules the app applies (spec section 8, AUTH values) ----
 STALE_AFTER_MS = 3000
@@ -105,6 +111,9 @@ BLE_SETUP_UUID = "6f1e0003-4c2b-4b7e-9d8a-d0a7e0b10001"      # read: how to reac
 BLE_COMMAND_UUID = "6f1e0004-4c2b-4b7e-9d8a-d0a7e0b10001"    # write: "STOP", or "CODE" (show pairing code + QR)
 BLE_WIFI_UUID = "6f1e0005-4c2b-4b7e-9d8a-d0a7e0b10001"       # write: sealed Wi-Fi details, framed chunks
 BLE_RESULT_UUID = "6f1e0006-4c2b-4b7e-9d8a-d0a7e0b10001"     # read, notify: Wi-Fi setup outcome JSON
+BLE_PAIR_UUID = "6f1e0007-4c2b-4b7e-9d8a-d0a7e0b10001"       # write phone key, read sealed welcome (2026-11-26)
+BLE_NETWORKS_UUID = "6f1e0008-4c2b-4b7e-9d8a-d0a7e0b10001"   # read, notify: Wi-Fi networks the robot can see
+BLE_PAIR_WINDOW_S = 600   # Bluetooth pairing is open this long after the robot starts, or while no phone is paired
 BLE_MAX_PAYLOAD = 180   # bytes; fits a 185-byte ATT MTU that iOS normally negotiates
 
 BONJOUR_TYPE = "_dorme._tcp"      # advertised by Avahi (deploy/dorme.avahi.service); the app browses it

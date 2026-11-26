@@ -17,6 +17,8 @@ struct TasksView: View {
             if let task = running {
                 CurrentTaskCard(task: task)
             }
+            SectionTitle(text: "Screen")
+            ScreenNoteCard()
             SectionTitle(text: "Actions")
             if catalog.isEmpty {
                 Card { Text("No actions yet. The list appears once the robot answers.").foregroundStyle(Theme.inkSecondary) }

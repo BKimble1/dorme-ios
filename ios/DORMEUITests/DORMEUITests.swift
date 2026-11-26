@@ -139,8 +139,27 @@ final class DORMEUITests: XCTestCase {
             drive.tap()
             sleep(1)
             shot("drive")
-            app.buttons["Robot"].tap()
         }
+
+        // Tasks: a message with a timer on the robot's screen (screen.note), then Say hello.
+        let tasksTab = app.buttons["Tasks"]
+        XCTAssertTrue(tasksTab.waitForExistence(timeout: 5))
+        tasksTab.tap()
+        let noteField = app.textFields["note.text"]
+        XCTAssertTrue(noteField.waitForExistence(timeout: 5), "screen message card missing")
+        noteField.tap()
+        noteField.typeText("Studying - back at 5\n")
+        app.buttons["25 min"].tap()
+        app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'Show with'")).firstMatch.tap()
+        XCTAssertTrue(app.buttons["Clear the screen"].waitForExistence(timeout: 8), "robot did not report the note")
+        shot("tasks-note")
+        app.buttons["Robot"].tap()
+        sleep(2)
+        shot("home-note-on-model")
+        app.buttons["Tasks"].tap()
+        app.buttons["Clear the screen"].tap()
+        XCTAssertTrue(app.buttons["Clear the screen"].waitForNonExistence(timeout: 8), "note did not clear")
+        app.buttons["Robot"].tap()
     }
 
     func testDemoMode() throws {

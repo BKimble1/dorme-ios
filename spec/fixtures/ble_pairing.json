@@ -1,0 +1,29 @@
+{
+ "phone_private_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+ "phone_public_hex": "07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c",
+ "robot_public_hex": "5714769d116bf76436ae74bc793d2c30ad1903c59ac5273805c7e2698b410c36",
+ "session_key_hex": "379b827b70d6038a553a6903392806853c274211237533b13c9a5a1f3ccb89cf",
+ "welcome_blob_hex": "5714769d116bf76436ae74bc793d2c30ad1903c59ac5273805c7e2698b410c36c8c9cacbcccdcecfd0d1d2d3e6e5a3f52b09ebda0c3b65c83d582751043e1cb04f69b135428d89889a66f9da68f1f68e920b75ad802d0de4d48d1dba30161ce45755cf2a3e54bb2f5771e7b1790a2a91278f5a2da79c843401e1ef5ecebdcf951ce5b19111a4e98e201e19104af373903921e8a62a4abf2b1d627e5551e06671944ed2787b7695e51ed21ac94e123a47dce7f6c9727723bc4a30dbc8dfaab1ab4c5a9b586ce18fc0a91b1529e1f81c84ba2656614fe61eaf27624401847006d2a18572e522247c9c307b9bad0394a24b18f3f238006157b6a1e0c6a06af13b143c665657425f443370897c2e0aabe34e0ba3d592",
+ "welcome": {
+  "v": 2,
+  "token": "abcd1234.TOKEN",
+  "name": "DORM-E",
+  "port": 8080,
+  "lan": [
+   "172.16.100.60"
+  ],
+  "ssid": "Home",
+  "ts": "dorm-e.tail0000.ts.net",
+  "tsip": [
+   "100.64.0.7"
+  ],
+  "ap": {
+   "ssid": "DORM-E-AB12",
+   "psk": "abcdefgh2345",
+   "ip": "10.42.0.1"
+  }
+ },
+ "wifi_nonce_hex": "32333435363738393a3b3c3d",
+ "wifi_plain_utf8": "{\"ssid\":\"Home\",\"psk\":\"secret-pass\"}",
+ "wifi_sealed_hex": "07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c32333435363738393a3b3c3d06e8dcc5d34e96bff419df7dd2ff9f97fdd011e20602a98bdd5e83fc9a572fc6ff33bf9f3a17873112d73c96017da55eb0f634"
+}

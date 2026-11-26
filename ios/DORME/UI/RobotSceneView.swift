@@ -15,6 +15,8 @@ struct RobotSceneView: UIViewRepresentable {
     var showCover = true
     /// Coordinator face state ("idle", "fault", ...). nil = screen dark (not connected).
     var face: String?
+    /// The owner's message while the face state is "note".
+    var note: ScreenNote? = nil
     var onTap: ((String) -> Void)?
     var onCoverTap: (() -> Void)?
 
@@ -210,7 +212,8 @@ struct RobotSceneView: UIViewRepresentable {
             }
             let now = Date()
             screen.diffuse.contents = FaceRenderer.image(state: state, elapsed: now.timeIntervalSince(started) + 6,
-                                                          stateElapsed: now.timeIntervalSince(faceSince), scale: 1.5)
+                                                          stateElapsed: now.timeIntervalSince(faceSince), scale: 1.5,
+                                                          note: parent.note)
         }
 
         // MARK: Taps

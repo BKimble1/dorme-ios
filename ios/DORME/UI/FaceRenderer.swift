@@ -1,3 +1,4 @@
+import DORMEKit
 import UIKit
 
 /// The robot's face, drawn the same way the Pi draws it on the LCD (port of dorme_robot/face/face.py,
@@ -17,19 +18,24 @@ enum FaceRenderer {
         guard let s = coordinatorState else { return nil }
         switch s {
         case "moving": return "listening"
-        case "idle", "listening", "happy", "puzzled", "low_energy", "sleepy", "fault", "pairing": return s
+        case "idle", "listening", "happy", "puzzled", "low_energy", "sleepy", "fault", "pairing", "note": return s
         default: return "idle"
         }
     }
 
     /// One frame. `elapsed`: seconds since the face started; `stateElapsed`: seconds in this state.
     /// `state == nil` is a dark screen (robot off or not connected).
-    static func image(state: String?, elapsed: Double, stateElapsed: Double, scale: CGFloat = 2) -> UIImage {
+    static func image(state: String?, elapsed: Double, stateElapsed: Double, scale: CGFloat = 2,
+                      note: ScreenNote? = nil) -> UIImage {
         rgba8(size: size, scale: scale) { g in
             UIColor.black.setFill()
             g.fill(CGRect(origin: .zero, size: size))
-            guard let state = lcdState(state) else { return }
+            guard var state = lcdState(state) else { return }
             if state == "pairing" { drawPairing(g); return }
+            if state == "note" {
+                if let note, !note.text.isEmpty { drawNote(g, note, elapsed: elapsed); return }
+                state = "idle"
+            }
             draw(g, state: state, elapsed: elapsed, stateElapsed: stateElapsed)
         }
     }
@@ -102,6 +108,38 @@ enum FaceRenderer {
         default:
             mouth.setFill()
             UIBezierPath(roundedRect: CGRect(x: 226, y: 235, width: 28, height: 5), cornerRadius: 2).fill()
+        }
+    }
+
+    /// face.py render_note: small eyes, the message (up to 3 lines), and a big mm:ss countdown when timed.
+    private static func drawNote(_ g: CGContext, _ note: ScreenNote, elapsed: Double) {
+        let blink = elapsed.truncatingRemainder(dividingBy: 4.7)
+        let eyeH: CGFloat = (blink < 0.22 && elapsed > 3) ? 6 : 34
+        eye.setFill()
+        for cx in [200.0, 280.0] {
+            UIBezierPath(roundedRect: CGRect(x: cx - 22, y: 40 - eyeH / 2, width: 44, height: eyeH),
+                         cornerRadius: min(10, eyeH / 2)).fill()
+        }
+        let remaining = note.until.map { max(0, Int(($0 - Date().timeIntervalSince1970).rounded())) }
+        let size: CGFloat = note.text.count <= 18 ? 40 : (note.text.count <= 36 ? 32 : 26)
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: size, weight: .regular),
+                                                    .foregroundColor: UIColor(white: 0.94, alpha: 1), .paragraphStyle: para]
+        let box = remaining == nil ? CGRect(x: 20, y: 90, width: 440, height: 200) : CGRect(x: 20, y: 84, width: 440, height: 130)
+        let text = NSAttributedString(string: note.text, attributes: attrs)
+        let h = min(box.height, text.boundingRect(with: CGSize(width: box.width, height: .greatestFiniteMagnitude),
+                                                  options: [.usesLineFragmentOrigin], context: nil).height)
+        let y = remaining == nil ? box.minY + (box.height - h) / 2 : box.minY
+        text.draw(with: CGRect(x: box.minX, y: y, width: box.width, height: box.height),
+                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], context: nil)
+        if let r = remaining {
+            let clock = r >= 3600 ? String(format: "%d:%02d:%02d", r / 3600, r % 3600 / 60, r % 60)
+                                  : String(format: "%02d:%02d", r / 60, r % 60)
+            let on = r > 0 || Int(elapsed * 2) % 2 == 0
+            let big: [NSAttributedString.Key: Any] = [.font: UIFont.monospacedDigitSystemFont(ofSize: 64, weight: .regular),
+                                                      .foregroundColor: on ? mouth : UIColor.black, .paragraphStyle: para]
+            NSAttributedString(string: clock, attributes: big).draw(in: CGRect(x: 0, y: 214, width: 480, height: 80))
         }
     }
 

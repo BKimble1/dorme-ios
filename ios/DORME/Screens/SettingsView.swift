@@ -32,6 +32,10 @@ struct SettingsView: View {
                         NavigationLink("Networks") { WifiNetworksView() }
                     }
                     Button("Set up over Bluetooth") { showBluetooth = true }
+                    if let hot = store.hotspot {
+                        LabeledContent("DORM-E's own Wi-Fi", value: hot.ssid)
+                        HotspotHint(ssid: hot.ssid, password: hot.password)
+                    }
                 }
 
                 Section("Remote access") {
@@ -50,9 +54,10 @@ struct SettingsView: View {
                 }
 
                 if store.phase == .connected {
-                    Section("Pairing") {
+                    Section {
+                        NavigationLink("Paired phones") { PairedPhonesView() }
                         Button("Show code on DORM-E") { Task { _ = await store.showPairingCode() } }
-                    }
+                    } header: { Text("Pairing") }
                     Section("System") {
                         Button("Restart robot software") { Task { note = (await store.restartService("dorme-coordinator")).ok ? "Restarting" : "Refused" } }
                         Button("Restart motor link") { Task { note = (await store.restartService("dorme-linkd")).ok ? "Restarting" : "Refused" } }
@@ -203,5 +208,56 @@ struct AddNetworkSheet: View {
                 }
             }
         }
+    }
+}
+
+/// Phones paired with DORM-E; add another (opens Bluetooth pairing for 5 minutes) or forget one.
+struct PairedPhonesView: View {
+    @Environment(RobotStore.self) private var store
+    @State private var phones: PairedPhones?
+    @State private var note: String?
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(phones?.phones ?? []) { phone in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(phone.name ?? "Phone")
+                            if let t = phone.createdAt {
+                                Text(Date(timeIntervalSince1970: t), style: .date).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        if phone.id == phones?.this {
+                            Text("This phone").foregroundStyle(.secondary)
+                        } else {
+                            Button("Forget", role: .destructive) {
+                                Task {
+                                    note = (await store.forgetPhone(phone.id)).ok ? "Forgotten." : "Could not forget it."
+                                    phones = await store.pairedPhones()
+                                }
+                            }
+                        }
+                    }
+                }
+            } footer: {
+                Text(phones?.bluetoothPairingOpen == true
+                     ? "Bluetooth pairing is open now."
+                     : "Bluetooth pairing opens for 10 minutes after DORM-E is switched on.")
+            }
+            Section {
+                Button("Add another phone") {
+                    Task {
+                        let ack = await store.openBluetoothPairing()
+                        note = ack.ok ? "For 5 minutes, another phone near DORM-E can pair over Bluetooth." : ack.message
+                        phones = await store.pairedPhones()
+                    }
+                }
+            }
+            if let note { Section { Text(note).foregroundStyle(.secondary) } }
+        }
+        .navigationTitle("Paired phones")
+        .task { phones = await store.pairedPhones() }
     }
 }

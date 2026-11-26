@@ -10,6 +10,10 @@ GATT service DORM-E (UUIDs in api.py):
   command write        "STOP" -> POST /api/v1/stop;  "CODE" -> robot screen shows the pairing code + QR
   wifi    write        sealed Wi-Fi details (provision.py), sent as chunks: byte 0 = index << 1 | last
   result  read/notify  {"ok": true/false/null, "ssid", "ipv4", "message"} after a Wi-Fi setup
+  pair    write/read/notify  (2026-11-26) phone writes framed chunks: its X25519 key (32) | phone name (UTF-8);
+          the robot notifies one byte (1 ready, 0 refused) and the phone reads (long read, <= 512 bytes):
+          0x01 | robot key | nonce | sealed welcome (token + addresses)   or   0x00 | {"code","message"} JSON
+  networks read/notify  {"n":[[ssid, signal %, security letter], ...]} after a "SCAN" command (<= 500 bytes)
 
 Nothing here can drive the robot. Wi-Fi details only open with the token from the robot's on-screen QR.
 Run: sudo python3 -m dorme_coord.ble_bridge [--api http://127.0.0.1:8080]
@@ -125,6 +129,31 @@ class ChunkAssembler:
         return None
 
 
+def networks_payload(networks, limit=500):
+    """[[ssid, signal, 'o'pen/'p'assword/'e'nterprise], ...] strongest first, trimmed to fit one long read."""
+    rows, seen = [], set()
+    for n in sorted(networks or [], key=lambda n: -(n.get("signal") or 0)):
+        ssid = n.get("ssid")
+        if not ssid or ssid in seen or ssid.startswith("DORM-E-"):
+            continue
+        seen.add(ssid)
+        rows.append([ssid[:32], n.get("signal"), (n.get("security") or "p")[0]])
+    while True:
+        out = json.dumps({"n": rows}, separators=(",", ":"), ensure_ascii=False).encode()
+        if len(out) <= limit or not rows:
+            return out
+        rows.pop()
+
+
+def pair_reply(reply):
+    """Coordinator answer to /api/v1/ble/hello -> the bytes the phone reads from the pair characteristic."""
+    import base64
+    if reply.get("ok") and (reply.get("result") or {}).get("blob"):
+        return b"\x01" + base64.b64decode(reply["result"]["blob"])
+    err = {"code": reply.get("code") or "REFUSED", "message": (reply.get("message") or "")[:160]}
+    return b"\x00" + json.dumps(err, separators=(",", ":")).encode()
+
+
 def send_stop(base):
     req = urllib.request.Request(base + "/api/v1/stop", data=b"{}", method="POST",
                                  headers={"Content-Type": "application/json"})
@@ -190,7 +219,9 @@ def main():  # pragma: no cover - needs BlueZ
 
         @dbus.service.method(GATT_CHR, in_signature="a{sv}", out_signature="ay")
         def ReadValue(self, options):
-            return dbus.Array(self.reader(), signature="y")
+            # BlueZ splits long reads (> MTU) into several ReadValue calls with an "offset" (2026-11-26)
+            offset = int(options.get("offset", 0)) if options else 0
+            return dbus.Array(self.reader()[offset:], signature="y")
 
         @dbus.service.method(GATT_CHR, in_signature="aya{sv}")
         def WriteValue(self, value, options):
@@ -250,8 +281,47 @@ def main():  # pragma: no cover - needs BlueZ
         def Release(self):
             pass
 
-    cache = {"status": b'{"v":1}', "state": None, "result": b'{"ok":null}', "addrs": []}
+    cache = {"status": b'{"v":1}', "state": None, "result": b'{"ok":null}', "addrs": [],
+             "pair": b"\x00{}", "networks": b'{"n":[]}'}
     assembler = ChunkAssembler()
+    pair_assembler = ChunkAssembler(limit=200)
+    import threading
+
+    def in_background(work, done):
+        """Blocking HTTP off the GLib loop; `done(result)` runs back on the loop."""
+        def run():
+            try:
+                result = work()
+            except (OSError, ValueError) as exc:
+                result = exc
+            GLib.idle_add(lambda: (done(result), False)[1])
+        threading.Thread(target=run, daemon=True).start()
+
+    def on_pair(data):
+        blob = pair_assembler.feed(data)
+        if blob is None:
+            return
+        import base64
+        if len(blob) < 32:
+            cache["pair"] = pair_reply({"code": "BAD_REQUEST"})
+            pair_chr.notify(b"\x00")
+            return
+        name = blob[32:72].decode("utf-8", "replace")
+        body = {"pub": base64.b64encode(blob[:32]).decode(), "name": name}
+
+        def done(reply):
+            if isinstance(reply, Exception):
+                reply = {"ok": False, "code": "UNAVAILABLE", "message": "Robot service not answering"}
+            cache["pair"] = pair_reply(reply)
+            pair_chr.notify(cache["pair"][:1])
+        in_background(lambda: post_json(args.api, "/api/v1/ble/hello", body), done)
+
+    def scan():
+        def done(res):
+            if not isinstance(res, Exception):
+                cache["networks"] = networks_payload(res.get("networks"))
+            networks_chr.notify(b"\x01")
+        in_background(lambda: get_json(args.api, "/api/v1/ble/scan"), done)
 
     def on_command(data):
         word = data.strip().upper()
@@ -260,6 +330,8 @@ def main():  # pragma: no cover - needs BlueZ
                 send_stop(args.api)
             elif word == b"CODE":
                 post_json(args.api, "/api/v1/ble/code", {})
+            elif word == b"SCAN":
+                scan()
         except OSError:
             pass
 
@@ -305,7 +377,12 @@ def main():  # pragma: no cover - needs BlueZ
     wifi_chr = Characteristic(svc_path + "/char3", api.BLE_WIFI_UUID, ["write"], svc_path, writer=on_wifi)
     result_chr = Characteristic(svc_path + "/char4", api.BLE_RESULT_UUID, ["read", "notify"], svc_path,
                                 reader=lambda: cache["result"])
-    app = App([Service(svc_path, api.BLE_SERVICE_UUID, [status_chr, setup_chr, cmd_chr, wifi_chr, result_chr])])
+    pair_chr = Characteristic(svc_path + "/char5", api.BLE_PAIR_UUID, ["read", "write", "notify"], svc_path,
+                              reader=lambda: cache["pair"], writer=on_pair)
+    networks_chr = Characteristic(svc_path + "/char6", api.BLE_NETWORKS_UUID, ["read", "notify"], svc_path,
+                                  reader=lambda: cache["networks"])
+    app = App([Service(svc_path, api.BLE_SERVICE_UUID,
+                       [status_chr, setup_chr, cmd_chr, wifi_chr, result_chr, pair_chr, networks_chr])])
     advert = Advert()
 
     reg = {"adv": None, "gatt": None}        # None = pending, True = accepted, str = BlueZ error

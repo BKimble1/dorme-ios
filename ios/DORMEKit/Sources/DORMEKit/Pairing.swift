@@ -68,3 +68,71 @@ public extension Data {
         self.init(bytes)
     }
 }
+
+// MARK: - Bluetooth pairing without a code (2026-11-26, pi/dorme_coord/provision.py ble_hello)
+
+/// What the robot seals into its Bluetooth pairing reply: a token and every way to reach it.
+public struct BLEWelcome: Codable, Equatable, Sendable {
+    public struct Hotspot: Codable, Equatable, Sendable {
+        public let ssid: String
+        public let psk: String?
+        public let ip: String?
+    }
+    public let v: Int
+    public let token: String
+    public let name: String?
+    public let port: Int?
+    public let lan: [String]?
+    public let ssid: String?
+    public let ts: String?          // Tailscale MagicDNS name
+    public let tsip: [String]?      // Tailscale addresses
+    public let ap: Hotspot?         // the robot's own Wi-Fi for places with no Wi-Fi
+}
+
+/// Phone side of the Bluetooth pairing: X25519 with a fresh key each time, HKDF-SHA256 (salt = phone key |
+/// robot key, info "dorme-ble-v2"), AES-256-GCM. The same session key seals the Wi-Fi password later.
+public struct BLEPairing: Sendable {
+    public static let info = Data("dorme-ble-v2".utf8)
+    public static let wifiInfo = Data("dorme-wifi-v2".utf8)
+    public let privateKey: Curve25519.KeyAgreement.PrivateKey
+    public var publicKey: Data { privateKey.publicKey.rawRepresentation }
+
+    public init(privateKey: Curve25519.KeyAgreement.PrivateKey = .init()) { self.privateKey = privateKey }
+
+    /// Written to the pair characteristic: phone key (32) | phone name (UTF-8, at most 40 bytes).
+    public func hello(name: String) -> Data {
+        var out = publicKey
+        var short = name
+        while short.utf8.count > 40 { short.removeLast() }     // whole characters only
+        out.append(Data(short.utf8))
+        return out
+    }
+
+    /// Opens robot key (32) | nonce (12) | sealed welcome. -> welcome and the session key.
+    public func open(_ blob: Data) throws -> (BLEWelcome, SymmetricKey) {
+        guard blob.count > 32 + 12 + 16 else { throw CryptoKitError.incorrectParameterSize }
+        let b = Data(blob)
+        let robot = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: b.prefix(32))
+        let shared = try privateKey.sharedSecretFromKeyAgreement(with: robot)
+        var salt = publicKey
+        salt.append(b.prefix(32))
+        let key = shared.hkdfDerivedSymmetricKey(using: SHA256.self, salt: salt, sharedInfo: Self.info, outputByteCount: 32)
+        let box = try AES.GCM.SealedBox(combined: b.dropFirst(32))
+        let plain = try AES.GCM.open(box, using: key, authenticating: Self.info)
+        return (try JSONDecoder().decode(BLEWelcome.self, from: plain), key)
+    }
+
+    /// Seals Wi-Fi details for the wifi characteristic: phone key | nonce | ciphertext | tag.
+    public func sealWifi(_ credentials: [String: Any], key: SymmetricKey, nonce: AES.GCM.Nonce = AES.GCM.Nonce()) throws -> Data {
+        try sealWifi(JSONSerialization.data(withJSONObject: credentials), key: key, nonce: nonce)
+    }
+
+    public func sealWifi(_ plain: Data, key: SymmetricKey, nonce: AES.GCM.Nonce) throws -> Data {
+        let box = try AES.GCM.seal(plain, using: key, nonce: nonce, authenticating: Self.wifiInfo)
+        var out = publicKey
+        out.append(nonce.withUnsafeBytes { Data($0) })
+        out.append(box.ciphertext)
+        out.append(box.tag)
+        return out
+    }
+}

@@ -17,6 +17,13 @@ Only these operations exist; anything else is refused:
   remote.up                         `tailscale up` (plain OpenSSH over the tailnet; no Tailscale SSH, whose
                                     default check mode would stall unattended sessions); returns the sign-in URL
   bluetooth.on                      unblock + power the adapter
+  hotspot.info                      the robot's own Wi-Fi network (name, password, address, on/off), made once
+
+Hotspot fallback (2026-11-26): when wlan0 has not been on any saved Wi-Fi for HOTSPOT_AFTER_S, the robot starts
+its own network "DORM-E-xxxx" (WPA2, NetworkManager shared mode, robot = 10.42.0.1) so a phone can still reach it
+with no Wi-Fi around. While nobody is joined, it drops the hotspot every HOTSPOT_RETRY_S for HOTSPOT_SCAN_S so
+NetworkManager can rejoin a saved network that came back. The password is random, root-only, and reaches phones
+only inside the sealed Bluetooth pairing reply or the paired app. Touch /etc/dorme/no-hotspot to turn this off.
 
 Run (root): python3 -m dorme_coord.admin [--socket /run/dorme-admin/admin.sock]
 """
@@ -40,6 +47,14 @@ RESULT_FILE = Path("/run/dorme-admin/wifi_result.json")
 SERVICES = {"dorme-linkd", "dorme-coordinator", "dorme-face", "dorme-ble"}
 CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 SWITCH_TIMEOUT_S = 30
+HOTSPOT_ID = "dorme-hotspot"
+HOTSPOT_FILE = KEYFILE_DIR / "dorme-hotspot.nmconnection"
+HOTSPOT_OFF_FLAG = Path("/etc/dorme/no-hotspot")
+HOTSPOT_AFTER_S = 120
+HOTSPOT_RETRY_S = 300
+HOTSPOT_SCAN_S = 45
+HOTSPOT_IP = "10.42.0.1"
+SWITCH_BUSY = {"until": 0.0}
 
 
 class AdminError(Exception):
@@ -137,7 +152,7 @@ def wifi_saved():
     saved = []
     for line in out.splitlines():
         f = nm_fields(line)
-        if len(f) >= 3 and f[1] == "802-11-wireless":
+        if len(f) >= 3 and f[1] == "802-11-wireless" and f[0] != HOTSPOT_ID:
             _, ssid = run("nmcli", "-g", "802-11-wireless.ssid", "connection", "show", f[0])
             saved.append({"name": f[0], "ssid": ssid.strip() or f[0], "priority": int(f[2]) if f[2].lstrip("-").isdigit() else 0})
     return {"saved": saved}
@@ -154,7 +169,105 @@ def write_result(data):
     os.replace(tmp, RESULT_FILE)
 
 
+def hotspot_keyfile(ssid, psk):
+    return "\n".join([
+        "[connection]", f"id={HOTSPOT_ID}", f"uuid={uuid.uuid4()}", "type=wifi", "autoconnect=false",
+        "interface-name=wlan0", "",
+        "[wifi]", "mode=ap", f"ssid={keyfile_escape(ssid)}", "band=bg", "channel=6", "",
+        "[wifi-security]", "key-mgmt=wpa-psk", "proto=rsn", "pairwise=ccmp", "group=ccmp", "pmf=1",
+        f"psk={keyfile_escape(psk)}", "",
+        "[ipv4]", "method=shared", f"address1={HOTSPOT_IP}/24", "",
+        "[ipv6]", "method=ignore", ""])
+
+
+def read_keyfile_value(text, section, key):
+    current = None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("[") and line.endswith("]"):
+            current = line[1:-1]
+        elif current == section and line.startswith(key + "="):
+            return line.split("=", 1)[1]
+    return None
+
+
+def hotspot_info(create=True):
+    """Name and password of the robot's own network; creates the root-only profile the first time."""
+    if HOTSPOT_FILE.exists():
+        text = HOTSPOT_FILE.read_text()
+        ssid, psk = read_keyfile_value(text, "wifi", "ssid"), read_keyfile_value(text, "wifi-security", "psk")
+    elif create:
+        import secrets
+        try:
+            tag = Path("/etc/machine-id").read_text().strip()[-4:].upper()
+        except OSError:
+            tag = secrets.token_hex(2).upper()
+        ssid = f"DORM-E-{tag}"
+        alphabet = "abcdefghjkmnpqrstuvwxyz23456789"      # no look-alike characters, easy to type
+        psk = "".join(secrets.choice(alphabet) for _ in range(12))
+        fd = os.open(HOTSPOT_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(hotspot_keyfile(ssid, psk))
+        run("nmcli", "connection", "load", str(HOTSPOT_FILE))
+    else:
+        return {"ssid": None}
+    return {"ssid": ssid, "psk": psk, "ip": HOTSPOT_IP, "active": wlan_connection() == HOTSPOT_ID,
+            "fallback": not HOTSPOT_OFF_FLAG.exists()}
+
+
+def wlan_connection():
+    """Name of the connection active on wlan0, or None."""
+    _, out = run("nmcli", "-t", "-f", "DEVICE,STATE,CONNECTION", "device")
+    for line in out.splitlines():
+        f = nm_fields(line)
+        if len(f) >= 3 and f[0] == "wlan0" and f[1].startswith("connected"):
+            return f[2] or None
+    return None
+
+
+def hotspot_has_guests():
+    rc, out = run("iw", "dev", "wlan0", "station", "dump")
+    if rc == 0:
+        return "Station" in out
+    _, out = run("ip", "neigh", "show", "dev", "wlan0")
+    return any(state in out for state in ("REACHABLE", "DELAY", "PROBE"))
+
+
+async def hotspot_loop(clock=time.monotonic):
+    """Start the robot's own network when no saved Wi-Fi is around; keep looking for saved Wi-Fi while idle."""
+    offline_since = clock()
+    hotspot_since = None
+    while True:
+        await asyncio.sleep(15)
+        try:
+            if HOTSPOT_OFF_FLAG.exists() or clock() < SWITCH_BUSY["until"]:
+                continue
+            conn = await asyncio.to_thread(wlan_connection)
+            now = clock()
+            if conn and conn != HOTSPOT_ID:
+                offline_since, hotspot_since = None, None
+                continue
+            if conn == HOTSPOT_ID:
+                hotspot_since = hotspot_since or now
+                if now - hotspot_since >= HOTSPOT_RETRY_S and not await asyncio.to_thread(hotspot_has_guests):
+                    log.info("Hotspot idle; looking for saved Wi-Fi for %d s", HOTSPOT_SCAN_S)
+                    await asyncio.to_thread(run, "nmcli", "connection", "down", "id", HOTSPOT_ID, timeout=20)
+                    offline_since, hotspot_since = now - HOTSPOT_AFTER_S + HOTSPOT_SCAN_S, None
+                continue
+            offline_since = offline_since or now
+            if now - offline_since >= HOTSPOT_AFTER_S:
+                await asyncio.to_thread(hotspot_info)
+                log.info("No saved Wi-Fi for %d s; starting the robot's own network", int(now - offline_since))
+                rc, _ = await asyncio.to_thread(run, "nmcli", "--wait", "20", "connection", "up", "id", HOTSPOT_ID,
+                                                timeout=30)
+                hotspot_since = clock() if rc == 0 else None
+                offline_since = None if rc == 0 else clock()
+        except Exception:
+            log.exception("hotspot loop")
+
+
 async def switch_to(conn_id, previous):
+    SWITCH_BUSY["until"] = time.monotonic() + SWITCH_TIMEOUT_S + 60
     await asyncio.sleep(1.5)            # let the reply reach the phone before the network changes
     rc, _ = await asyncio.to_thread(run, "nmcli", "--wait", str(SWITCH_TIMEOUT_S), "connection", "up", "id", conn_id,
                                     timeout=SWITCH_TIMEOUT_S + 10)
@@ -250,6 +363,8 @@ async def handle(req):
             data = {}
         return {"state": data.get("BackendState"), "login_url": data.get("AuthURL") or None,
                 "name": ((data.get("Self") or {}).get("DNSName") or "").rstrip(".") or None}
+    if op == "hotspot.info":
+        return await asyncio.to_thread(hotspot_info)
     if op == "bluetooth.on":
         run("rfkill", "unblock", "bluetooth")
         run("bluetoothctl", "power", "on")
@@ -292,6 +407,7 @@ async def serve(path):
         pass
     os.chmod(path, 0o660)
     log.info("dorme-admin on %s", path)
+    asyncio.get_running_loop().create_task(hotspot_loop())
     async with server:
         await server.serve_forever()
 
@@ -358,6 +474,9 @@ class SimAdmin:
             return {"ok": True, "result": {"accepted": op, "simulated": True}}
         if op == "remote.up":
             return {"ok": True, "result": {"state": "NeedsLogin", "login_url": None, "simulated": True}}
+        if op == "hotspot.info":
+            return {"ok": True, "result": {"ssid": "DORM-E-SIM0", "psk": "simulator123", "ip": "10.42.0.1",
+                                           "active": False, "fallback": True, "simulated": True}}
         return {"ok": False, "error": "Unknown operation."}
 
 

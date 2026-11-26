@@ -70,11 +70,43 @@ class ApiServer:
         self.coord = coord
         self.auth = auth
         self.provisioner = Provisioner(auth)
+        self.pair_open_until = None          # monotonic; set by a paired phone ("Add another phone")
+        self.hello_times = []                # rate limit for Bluetooth pairing attempts
         self.host, self.port = host, port
         self.trust_loopback = trust_loopback
         self.server = None
         self._conn_counter = 0
         self.ws_clients = set()
+
+    def ble_pairing_open(self):
+        """Bluetooth pairing (no code) is open: for BLE_PAIR_WINDOW_S after the robot starts (monotonic time on
+        Linux counts from boot, so a power cycle by someone holding the robot reopens it), while no phone has
+        ever paired, or for 5 minutes after a paired phone chooses "Add another phone"."""
+        now = time.monotonic()
+        if self.coord.config.get("ble_pair_always"):
+            return True
+        if not self.auth.has_sessions():
+            return True
+        if now < self.coord.config.get("ble_pair_window_s", api.BLE_PAIR_WINDOW_S):
+            return True
+        return bool(self.pair_open_until and now < self.pair_open_until)
+
+    async def ble_welcome(self, client_name):
+        """What a phone needs to reach the robot from anywhere, sealed into the Bluetooth pairing reply."""
+        net = self.coord.network_view()
+        welcome = {"v": 2, "token": self.auth.issue(client_name), "name": "DORM-E", "port": self.port,
+                   "lan": (net.get("ipv4") or [])[:3], "ssid": net.get("wifi_ssid"),
+                   "ts": (net.get("remote") or {}).get("name"), "tsip": ((net.get("remote") or {}).get("ips") or [])[:2]}
+        admin = self.coord.admin
+        if admin is not None:
+            try:
+                hot = await admin.call("hotspot.info", timeout=5)
+                if hot.get("ok") and (hot.get("result") or {}).get("ssid"):
+                    r = hot["result"]
+                    welcome["ap"] = {"ssid": r["ssid"], "psk": r.get("psk"), "ip": r.get("ip", "10.42.0.1")}
+            except Exception:  # pragma: no cover - helper missing or slow; the welcome works without it
+                pass
+        return welcome
 
     async def start(self):
         # 2026-11-25: "0.0.0.0" also listens on IPv6 ("::", v6-only). The robot announces IPv6 addresses over mDNS
@@ -210,6 +242,21 @@ class ApiServer:
                         print(f"SIMULATOR on-screen pairing code: {code}", flush=True)   # no real screen; protects nothing real
                     await self._send_json(writer, 200, ack(None, True, result={"expires_in_s": left_s,
                                                                                 "shown_on": "robot_screen"}))
+        elif p == "/api/v1/pair/open" and m == "POST":
+            self._require(source)                    # a paired phone lets another phone pair over Bluetooth
+            self.pair_open_until = time.monotonic() + 300
+            await self._send_json(writer, 200, ack(None, True, result={"open_for_s": 300}))
+        elif p == "/api/v1/pair/phones" and m == "GET":
+            self._require(source)
+            await self._send_json(writer, 200, {"phones": self.auth.session_names(), "this": source["id"][2:] if source["id"].startswith("s-") else None,
+                                                "bluetooth_pairing_open": self.ble_pairing_open()})
+        elif p == "/api/v1/pair/forget" and m == "POST":
+            self._require(source)
+            sid = req.json().get("id")
+            if not isinstance(sid, str) or sid not in {s["id"] for s in self.auth.session_names()}:
+                raise HttpError(404, "No such phone")
+            self.auth.revoke(sid)
+            await self._send_json(writer, 200, ack(None, True, result={"forgotten": sid}))
         elif p == "/api/v1/stop" and m == "POST":
             await self._command(writer, api.CMD_STOP, {}, source)        # no pairing needed, by design
         elif p == "/api/v1/commands" and m == "POST":
@@ -321,6 +368,31 @@ class ApiServer:
                 self.coord.show_pairing(code, left_s, self.provisioner.qr_payload())
             await self._send_json(writer, 200 if code else 423, ack(None, bool(code), None if code else err,
                                                                      result={"expires_in_s": left_s}))
+        elif p == "/api/v1/ble/hello" and m == "POST":
+            body = req.json()
+            now = time.monotonic()
+            self.hello_times = [t for t in self.hello_times if now - t < 60] + [now]
+            if len(self.hello_times) > 10:
+                await self._send_json(writer, 429, ack(None, False, "LOCKED_OUT", "Too many pairing tries. Wait a minute."))
+                return
+            if not self.ble_pairing_open():
+                await self._send_json(writer, 423, ack(None, False, "PAIR_CLOSED", api.ACK_CODES["PAIR_CLOSED"]))
+                return
+            try:
+                phone_pub = base64.b64decode(body.get("pub", ""), validate=True)
+            except (ValueError, TypeError):
+                raise HttpError(400, "pub must be base64")
+            name = " ".join(str(body.get("name") or "iPhone").split())[:40] or "iPhone"
+            try:
+                blob = self.provisioner.ble_hello(phone_pub, await self.ble_welcome(name))
+            except ValueError as exc:
+                raise HttpError(400, str(exc))
+            self.coord.show_paired_notice(name)
+            await self._send_json(writer, 200, ack(None, True, result={"blob": base64.b64encode(blob).decode()}))
+        elif p == "/api/v1/ble/scan" and m == "GET":
+            result = await self._admin_call(writer, "wifi.scan")
+            if result is not None:
+                await self._send_json(writer, 200, result)
         elif p == "/api/v1/ble/result" and m == "GET":
             result = await self._admin_call(writer, "wifi.result")
             if result is not None:

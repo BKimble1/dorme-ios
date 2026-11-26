@@ -27,6 +27,7 @@ log = logging.getLogger("dorme-coord")
 
 STOP_LETTER = {"app": "P", "ble": "P", "voice": "V", "task": "C", "local": "S"}
 STAT_FRESH_MS = 1500
+OFF_SEQUENCE_STATES = ("OFF_WAIT_ACK", "OFF_WAIT_TOKEN", "SETTLE", "CUT")   # NOCUT = the cut failed
 TRANSIENT_DEFAULT = {"happy": 1.0, "puzzled": 1.5}
 # 2026-11-25: show "sleepy" only this long after an OFF request. On a robot that really powers off, the Pi is
 # gone well before this. If it is still running (bench: power-off disabled, or a cut that did not happen),
@@ -67,6 +68,7 @@ class Coordinator:
         self.move_watchers = {}
         self.rearm_waiters = []
         self.transient = None
+        self.note = None            # {"text", "until" (unix s or None), "expires" (monotonic or None)}
         self.stopped_since = time.monotonic()
         self.state_seq = 0
         self.last_photo = None
@@ -184,6 +186,15 @@ class Coordinator:
         if ftype == "STAT":
             was_on = self.motors_on()
             self.esp.update(stat=fields, stat_at=mono_ms(), up=True, ever_up=True)
+            # 2026-11-26 (build audit): an OFF request that never became a power cut (bench board, poweroff
+            # disabled) used to block driving and pi_ready until the coordinator restarted. Once the ESP32 has
+            # left the OFF sequence and the off look has had its minute, the robot is not shutting down.
+            if (self.off_reason and self.off_at is not None and time.monotonic() - self.off_at >= OFF_FACE_S
+                    and fields.get("state") not in OFF_SEQUENCE_STATES):
+                log.info("OFF %s did not end in a power cut (ESP32 now %s); clearing it", self.off_reason,
+                         fields.get("state"))
+                self.off_reason, self.off_at = None, None
+                self.emit_event("power.off_abandoned", esp_state=fields.get("state"))
             if was_on and not self.motors_on():
                 self.stopped_since = time.monotonic()
         elif ftype == "BOOT":
@@ -401,6 +412,43 @@ class Coordinator:
         self.transient = (name, time.monotonic() + seconds)
         self.face.set(name, transient_s=seconds)
 
+    def show_paired_notice(self, phone_name):
+        """Everyone near the robot sees that a phone just paired over Bluetooth (the pairing has no code)."""
+        self.notice = {"text": f"Paired: {phone_name}"[:api.NOTE_MAX_CHARS], "until": None,
+                       "expires": time.monotonic() + 6}
+        self.emit_event("pair.new", name=phone_name)
+
+    def screen_note(self):
+        """A short notice (6 s) wins over the owner's note, which comes back after it."""
+        notice = getattr(self, "notice", None)
+        if notice and time.monotonic() < notice["expires"]:
+            return notice
+        """The owner's on-screen message while it lasts, else None."""
+        if self.note and self.note["expires"] is not None and time.monotonic() >= self.note["expires"]:
+            self.note = None
+        return self.note
+
+    async def _cmd_screen_note(self, cid, args, source):
+        text = args.get("text", "")
+        seconds = args.get("seconds", 0) or 0
+        if not isinstance(text, str) or isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
+            return ack(cid, False, "BAD_REQUEST", message="text must be a string, seconds a number.")
+        text = " ".join(text.split())
+        if len(text) > api.NOTE_MAX_CHARS or not 0 <= seconds <= api.NOTE_MAX_SECONDS:
+            return ack(cid, False, "BAD_REQUEST",
+                       message=f"Up to {api.NOTE_MAX_CHARS} characters and {api.NOTE_MAX_SECONDS // 3600} h.")
+        if not text and seconds:
+            text = "Timer"
+        if not text:
+            self.note = None
+            self.emit_event("screen.note", note=None)
+            return ack(cid, True, result={"note": None})
+        until = time.time() + seconds if seconds else None
+        expires = time.monotonic() + seconds + api.NOTE_DONE_SHOW_S if seconds else None
+        self.note = {"text": text, "until": until, "expires": expires}
+        self.emit_event("screen.note", note={"text": text, "until": until})
+        return ack(cid, True, result={"note": {"text": text, "until": until}})
+
     def on_task_finished(self, task):
         if task.state == "succeeded" and task.action != "greet":
             self.face_transient("happy")
@@ -425,13 +473,18 @@ class Coordinator:
             return "sleepy"
         if self.pairing_code():
             return "pairing"
+        # 2026-11-26: a short look the owner asked for (Say hello, task feedback, screen note) shows over a
+        # standing fault for its few seconds, then the fault look comes back. Before this, a latched fault
+        # (NOCUT on the bare bench board) hid every task's face change.
+        if self.transient and time.monotonic() < self.transient[1]:
+            return self.transient[0]
+        if self.screen_note():
+            return "note"
         fault = self.esp_fault()
         if fault == "LOW_BUS":
             return "low_energy"
         if fault and fault != "SONAR_FAIL":
             return "fault"
-        if self.transient and time.monotonic() < self.transient[1]:
-            return self.transient[0]
         if self.motors_on() or self.arbiter.owner:
             return "moving"
         if self.battery_view()["low"]:
@@ -468,8 +521,10 @@ class Coordinator:
         while True:
             try:
                 name = self.compute_face()
+                note = self.screen_note() if name == "note" else None
                 self.face.set(name, code=self.pairing_code() if name == "pairing" else None,
-                              qr=self.pairing[2] if name == "pairing" and self.pairing else None)
+                              qr=self.pairing[2] if name == "pairing" and self.pairing else None,
+                              note={"text": note["text"], "until": note["until"]} if note else None)
                 state = self.state()
                 key = json.dumps({k: v for k, v in state.items() if k not in ("seq", "battery", "connection")},
                                  sort_keys=True, default=str)
@@ -561,6 +616,8 @@ class Coordinator:
                       "motor_rail_v": round(s["vmot_mv"] / 1000, 1) if fresh and s.get("vmot_mv", -1) > 0 else None},
             "face": {"state": self.compute_face(), "adapter": face_status["status"],
                      "adapter_reason": face_status["reason"]},
+            "screen": {"note": ({"text": self.screen_note()["text"], "until": self.screen_note()["until"]}
+                                if self.screen_note() else None)},
             "peripherals": {"camera": cam, "audio": self.audio.status(), "ble": self.ble.status(), "sonar": sonar},
             "network": self.network_view(),
             "health": self.health_view(),

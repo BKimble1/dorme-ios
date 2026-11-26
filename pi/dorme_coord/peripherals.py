@@ -145,10 +145,23 @@ class RpiCamera(CameraService):
         return {"status": "available", "reason": None, "sensor": model}
 
     def status(self):
+        """Cached; the probe (rpicam-hello, up to 8 s) runs in a thread so it never stalls the event loop
+        (2026-11-26 build audit: it used to block drive holds and the stop path every 30 s)."""
+        import threading
         now = time.monotonic()
-        if self._probe is None or now - self._probe_at > 30:
-            self._probe, self._probe_at = self._do_probe(), now
-        return dict(self._probe)
+        if (self._probe is None or now - self._probe_at > 30) and not getattr(self, "_probing", False):
+            self._probing, self._probe_at = True, now
+
+            def probe():
+                try:
+                    self._probe = self._do_probe()
+                finally:
+                    self._probing = False
+            if sys.platform.startswith("linux"):
+                threading.Thread(target=probe, daemon=True).start()
+            else:
+                probe()
+        return dict(self._probe or {"status": "unavailable", "reason": "Checking for a camera."})
 
     async def _run(self):
         cmd = ["rpicam-vid", "-t", "0", "--codec", "mjpeg", "--width", str(self.width),

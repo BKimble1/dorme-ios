@@ -22,6 +22,8 @@ public final class DemoRobot: RobotClient {
     private var seq = 0
     private var voltage = 9.64
     private var fault: FaultInfo?
+    private var note: ScreenNote?
+    private var noteExpires: Date?
     private var owner: (client: String, claim: String, seq: Int, direction: Direction?, leaseUntil: Date?)?
     private var epoch = 0
     private var task: RobotTask?
@@ -196,6 +198,19 @@ public final class DemoRobot: RobotClient {
             fault = nil
             emitEvent("fault.cleared", [:])
             return Ack(id: c.id, ok: true, result: ["cleared": .string(f.code)])
+        case "screen.note":
+            let text = (c.args["text"]?.string ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            let seconds = c.args["seconds"]?.int ?? 0
+            guard text.count <= 60, (0...4 * 3600).contains(seconds) else { return .failure(c.id, "BAD_REQUEST") }
+            if text.isEmpty && seconds == 0 {
+                note = nil; noteExpires = nil
+                return Ack(id: c.id, ok: true)
+            }
+            let now = clock()
+            note = ScreenNote(text: text.isEmpty ? "Timer" : text,
+                              until: seconds > 0 ? now.addingTimeInterval(Double(seconds)).timeIntervalSince1970 : nil)
+            noteExpires = seconds > 0 ? now.addingTimeInterval(Double(seconds) + 60) : nil
+            return Ack(id: c.id, ok: true)
         case "state.get", "capabilities.get":
             return Ack(id: c.id, ok: true)
         default:
@@ -378,10 +393,14 @@ public final class DemoRobot: RobotClient {
         let now = clock()
         let moving = !benchMode && controllerLinked && owner?.direction != nil && fault == nil
         let block = driveBlock()
+        if let e = noteExpires, now >= e { note = nil; noteExpires = nil }
         let faceName: String = {
+            // same order as the robot (coordinator.compute_face): a requested look and the owner's note
+            // show over a standing fault
+            if let tf = transientFace, now < tf.until { return tf.name }
+            if note != nil { return "note" }
             if let f = fault { return f.code == "LOW_BUS" ? "low_energy" : "fault" }
             if !controllerLinked { return "fault" }
-            if let tf = transientFace, now < tf.until { return tf.name }
             if owner != nil { return "moving" }
             if lowBattery { return "low_energy" }
             return "idle"
@@ -421,6 +440,7 @@ public final class DemoRobot: RobotClient {
             network: NetworkInfo(trust: "private", wifiSsid: "Demo Wi-Fi", wifiDbm: -52, ipv4: ["demo"],
                                  remote: RemoteInfo(online: false)),
             health: demoHealth(activeFault: activeFault),
+            screen: ScreenInfo(note: note),
             notMeasured: ["current", "runtime", "temperature", "motor_rpm", "charging_status", "wheel_speed"])
     }
 
@@ -459,7 +479,7 @@ public final class DemoRobot: RobotClient {
 
     public func capabilities() -> Capabilities {
         Capabilities(apiVersion: 1, commands: ["stop", "drive.claim", "drive.hold", "drive.release", "task.start",
-                                               "task.cancel", "fault.rearm", "state.get", "capabilities.get"],
+                                               "task.cancel", "fault.rearm", "state.get", "capabilities.get", "screen.note"],
                      drive: DriveCaps(directions: ["F", "B", "L", "R"], holdToDrive: true, speedLevelsPct: [30], turnSpeedPct: 60,
                                       speedNote: "Phone speed is fixed at SPEED_LOW in V1. Firmware caps PWM at 60 %.",
                                       holdLeaseMs: leaseMs, holdIntervalMs: 200),

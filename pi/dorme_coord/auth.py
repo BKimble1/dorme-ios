@@ -150,6 +150,17 @@ class Auth:
             self.note_failure(now)
             return None, "BAD_PIN", None
         self.failures, self.lock_s = 0, 60
+        return self.issue(client_name), None, None
+
+    def has_sessions(self):
+        return bool(self.data.get("sessions"))
+
+    def session_names(self):
+        return [{"id": k, "name": v.get("name"), "created_at": v.get("created_at")}
+                for k, v in (self.data.get("sessions") or {}).items()]
+
+    def issue(self, client_name="iPhone"):
+        """A new bearer token for a phone that proved itself (PIN, on-screen code or Bluetooth pairing)."""
         token = secrets.token_urlsafe(32)
         sessions = self.data.setdefault("sessions", {})
         sid = secrets.token_hex(4)
@@ -159,7 +170,7 @@ class Auth:
             oldest = min(sessions, key=lambda k: sessions[k]["created_at"])
             del sessions[oldest]
         self._save()
-        return f"{sid}.{token}", None, None
+        return f"{sid}.{token}"
 
     def check(self, bearer):
         """-> session id or None."""

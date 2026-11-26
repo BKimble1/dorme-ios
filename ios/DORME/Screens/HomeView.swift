@@ -59,7 +59,7 @@ struct HomeView: View {
 
     private var modelCard: some View {
         ZStack(alignment: .bottomTrailing) {
-            RobotSceneView(statuses: statuses, showCover: showCover, face: liveFace,
+            RobotSceneView(statuses: statuses, showCover: showCover, face: liveFace, note: store.state?.screen?.note,
                            onTap: { path.append($0) }, onCoverTap: { showCover = false })
                 .frame(height: 340)
             Button { showCover.toggle() } label: {

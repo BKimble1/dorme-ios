@@ -129,6 +129,8 @@ final class RobotStore {
         }
         list.append("dorm-e.local")
         list.append("dorm-e")
+        // the robot's own Wi-Fi (no Wi-Fi around, phone joined DORM-E-xxxx): the robot is the gateway
+        list.append(defaults.string(forKey: "robot.hotspotIP") ?? "10.42.0.1")
         var seen = Set<String>()
         return list.filter { seen.insert($0).inserted }
     }
@@ -237,6 +239,58 @@ final class RobotStore {
 
     func power(_ action: String) async -> Ack {      // "reboot" or "poweroff"
         await network?.post("api/v1/system/\(action)", body: ["confirm": true]) ?? .failure(nil, "OFFLINE")
+    }
+
+    // MARK: Bluetooth pairing (no code), 2026-11-26
+
+    /// The robot's own Wi-Fi, learned when pairing over Bluetooth: join it where there is no other Wi-Fi.
+    var hotspot: (ssid: String, password: String)? {
+        guard let ssid = defaults.string(forKey: "robot.hotspotSSID"),
+              let psk = Keychain.read(account: "dorme.hotspot") else { return nil }
+        return (ssid, psk)
+    }
+
+    /// Pair with a nearby robot over Bluetooth, save every way to reach it, then connect. nil = paired.
+    func pairOverBluetooth(_ id: UUID) async -> String? {
+        switch await ble.pair(id, phoneName: UIDevice.current.name) {
+        case .refused(_, let message):
+            return message
+        case .paired(let w):
+            Keychain.save(w.token, account: NetworkRobotClient.tokenAccount)
+            if let ip = w.lan?.first { defaults.set(ip, forKey: "robot.lanIP") }
+            if let ts = w.ts, !ts.isEmpty { defaults.set(ts, forKey: "robot.remoteName") }
+            if let ip = w.tsip?.first { defaults.set(ip, forKey: "robot.remoteIP") }
+            if let port = w.port { defaults.set(port, forKey: "robot.port") }
+            if let ap = w.ap {
+                defaults.set(ap.ssid, forKey: "robot.hotspotSSID")
+                defaults.set(ap.ip ?? "10.42.0.1", forKey: "robot.hotspotIP")
+                if let psk = ap.psk { Keychain.save(psk, account: "dorme.hotspot") }
+            }
+            bluetoothRobot = id
+            if let net = network {                  // reachable but was asking to pair: reconnect with the token
+                let host = net.host, port = net.port
+                connect(host: host, port: port)
+            } else {
+                autoConnect()
+            }
+            return nil
+        }
+    }
+
+    /// The robot this phone paired with over Bluetooth (for Wi-Fi setup without a code).
+    private(set) var bluetoothRobot: UUID?
+
+    func screenNote(_ text: String, seconds: Int) async -> Ack {
+        guard let client else { return .failure(nil, "OFFLINE") }
+        let ack = await client.send(.screenNote(text, seconds: seconds))
+        if !ack.ok { show(ack.message, .warn) }
+        return ack
+    }
+
+    func pairedPhones() async -> PairedPhones? { await network?.getJSON("api/v1/pair/phones", as: PairedPhones.self) }
+    func openBluetoothPairing() async -> Ack { await network?.post("api/v1/pair/open") ?? .failure(nil, "OFFLINE") }
+    func forgetPhone(_ id: String) async -> Ack {
+        await network?.post("api/v1/pair/forget", body: ["id": id]) ?? .failure(nil, "OFFLINE")
     }
 
     /// Pair with a scanned QR: its 6 digits pair over Wi-Fi; the QR is kept for Bluetooth Wi-Fi setup.
@@ -382,7 +436,12 @@ final class RobotStore {
         guard let client else { return }
         Task {
             let ack = await client.send(.rearm())
-            show(ack.ok ? "Fault cleared. The next move still needs a new command." : ack.message, ack.ok ? .good : .warn)
+            // 2026-11-26 build audit: with dorme-linkd in dry run the robot only logs the rearm; say so
+            if ack.ok, ack.result["dry_run"]?.bool == true {
+                show("Test mode: the clear was logged, not sent to the controller.", .warn)
+            } else {
+                show(ack.ok ? "Fault cleared. The next move still needs a new command." : ack.message, ack.ok ? .good : .warn)
+            }
         }
     }
 

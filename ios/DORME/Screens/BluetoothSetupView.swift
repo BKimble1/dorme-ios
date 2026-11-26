@@ -1,82 +1,150 @@
 import SwiftUI
 import DORMEKit
 
-/// Put DORM-E on Wi-Fi over Bluetooth. The robot shows a QR; scanning it gives the key that seals the
-/// Wi-Fi password before it leaves the phone (DORMEKit/Pairing.swift).
+/// Put DORM-E on Wi-Fi over Bluetooth, no code (2026-11-26). The phone pairs over Bluetooth first; that session's
+/// key seals the Wi-Fi password before it leaves the phone (DORMEKit BLEPairing). DORM-E lists the networks it can
+/// see, so the name does not have to be typed. If the new network fails, the robot goes back to the old one.
 struct BluetoothSetupView: View {
     @Environment(RobotStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var robotID: UUID?
-    @State private var qr: PairingQR?
-    @State private var scanning = false
+    @State private var pairing = false
+    @State private var pairMessage: String?
     @State private var ssid = ""
     @State private var password = ""
     @State private var enterprise = false
     @State private var username = ""
     @State private var domain = ""
+    @State private var hidden = false
+    @State private var typing = false
     @State private var sent = false
+
+    private var paired: Bool { robotID.map { store.ble.pairedOverBluetooth.contains($0) } ?? false }
 
     var body: some View {
         NavigationStack {
             Form {
                 if robotID == nil {
-                    Section {
-                        if store.ble.devices.isEmpty {
-                            HStack { ProgressView(); Text("Searching nearby") }
-                        }
-                        ForEach(store.ble.devices) { d in
-                            Button {
-                                robotID = d.id
-                                store.ble.requestCode(d.id)
-                            } label: {
-                                HStack {
-                                    Text(d.name)
-                                    Spacer()
-                                    Text(d.wifiName ?? "No Wi-Fi").foregroundStyle(.secondary)
-                                }
-                            }
-                            .disabled(!d.canSetUpWifi)
-                        }
-                    } header: { Text("Nearby") }
-                } else if qr == nil {
-                    Section {
-                        Button { scanning = true } label: { Label("Scan the code on DORM-E", systemImage: "qrcode.viewfinder") }
-                        Button("Show the code again") { if let id = robotID { store.ble.requestCode(id) } }
-                    }
-                } else if !sent {
-                    Section {
-                        TextField("Network name", text: $ssid).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        Toggle("Needs a username", isOn: $enterprise)
-                        if enterprise {
-                            TextField("Username", text: $username).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        }
-                        SecureField("Password", text: $password)
-                        if enterprise {
-                            TextField("Server domain (e.g. school.edu)", text: $domain)
-                                .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        }
-                    }
-                    Section {
-                        Button("Join") { send() }.disabled(ssid.isEmpty || (enterprise && username.isEmpty))
-                    }
-                } else {
+                    chooseRobot
+                } else if !paired {
+                    pairStep
+                } else if sent {
                     Section { result }
+                } else if ssid.isEmpty && !typing {
+                    chooseNetwork
+                } else {
+                    credentials
                 }
             }
             .navigationTitle("Wi-Fi setup")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
-            .onAppear { store.ble.start() }
-            .sheet(isPresented: $scanning) {
-                QRScannerView { text in
-                    scanning = false
-                    if let parsed = PairingQR(text) {
-                        qr = parsed
-                        store.rememberQR(parsed)
+            .onAppear {
+                store.ble.start()
+                if robotID == nil, store.ble.devices.count == 1 { robotID = store.ble.devices[0].id }
+            }
+            .onChange(of: store.ble.devices.count) { _, n in
+                if robotID == nil, n == 1 { robotID = store.ble.devices[0].id }
+            }
+            .onChange(of: paired) { _, now in
+                if now, let id = robotID { store.ble.scanNetworks(id) }
+            }
+            .onChange(of: robotID) { _, id in
+                if let id, paired, store.ble.networks[id] == nil { store.ble.scanNetworks(id) }
+            }
+            .task {
+                if let id = robotID, paired, store.ble.networks[id] == nil { store.ble.scanNetworks(id) }
+            }
+        }
+    }
+
+    @ViewBuilder private var chooseRobot: some View {
+        Section {
+            if store.ble.devices.isEmpty {
+                HStack { ProgressView(); Text("Searching nearby (\(store.ble.radio))") }
+            }
+            ForEach(store.ble.devices) { d in
+                Button { robotID = d.id } label: {
+                    HStack {
+                        Text(d.name)
+                        Spacer()
+                        Text(d.wifiName ?? "No Wi-Fi").foregroundStyle(.secondary)
                     }
                 }
-                .ignoresSafeArea()
             }
+        } header: { Text("Nearby") } footer: { Text("Keep the phone within a few metres of DORM-E.") }
+    }
+
+    @ViewBuilder private var pairStep: some View {
+        Section {
+            Button {
+                guard let id = robotID else { return }
+                pairing = true
+                pairMessage = nil
+                Task {
+                    pairMessage = await store.pairOverBluetooth(id)
+                    pairing = false
+                }
+            } label: {
+                HStack {
+                    Label("Pair over Bluetooth", systemImage: "dot.radiowaves.left.and.right")
+                    if pairing { Spacer(); ProgressView() }
+                }
+            }
+            .disabled(pairing || !(store.ble.devices.first { $0.id == robotID }?.canPair ?? false))
+            if let pairMessage { Text(pairMessage).font(.footnote).foregroundStyle(Theme.bad) }
+        } footer: {
+            Text("No code needed. Pairing is open for 10 minutes after DORM-E is switched on, or while no phone is paired.")
+        }
+    }
+
+    @ViewBuilder private var chooseNetwork: some View {
+        let id = robotID
+        let list = id.flatMap { store.ble.networks[$0] } ?? []
+        Section {
+            if list.isEmpty {
+                HStack {
+                    if id.map({ store.ble.scanning.contains($0) }) ?? false { ProgressView() }
+                    Text(id.map({ store.ble.scanning.contains($0) }) ?? false ? "DORM-E is looking for networks" : "No networks yet")
+                }
+            }
+            ForEach(list) { n in
+                Button {
+                    ssid = n.ssid
+                    enterprise = n.security == "enterprise"
+                } label: {
+                    HStack {
+                        Text(n.ssid)
+                        Spacer()
+                        if n.security != "open" { Image(systemName: "lock.fill").foregroundStyle(.secondary) }
+                        if let s = n.signal { Text("\(s)%").foregroundStyle(.secondary).monospacedDigit() }
+                    }
+                }
+            }
+            Button("Other network…") { typing = true }
+            Button("Look again") { if let id { store.ble.scanNetworks(id) } }
+        } header: { Text("Networks DORM-E can see") } footer: {
+            Text("For remote access from anywhere, pick a network with internet. An iPhone hotspot works too: open Settings → Personal Hotspot on the phone while DORM-E joins.")
+        }
+    }
+
+    @ViewBuilder private var credentials: some View {
+        Section {
+            TextField("Network name", text: $ssid).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Toggle("Needs a username (school or work)", isOn: $enterprise)
+            if enterprise {
+                TextField("Username", text: $username).textInputAutocapitalization(.never).autocorrectionDisabled()
+            }
+            SecureField("Password", text: $password)
+            if enterprise {
+                TextField("Server domain (e.g. school.edu)", text: $domain)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+            }
+            Toggle("Hidden network", isOn: $hidden)
+        }
+        Section {
+            Button("Join") { send() }.disabled(ssid.isEmpty || (enterprise && username.isEmpty))
+            Button("Back to the list") { ssid = ""; typing = false }
         }
     }
 
@@ -85,18 +153,14 @@ struct BluetoothSetupView: View {
         switch r?.ok {
         case .some(true):
             Label("DORM-E joined \(r?.ssid ?? ssid)", systemImage: "checkmark.circle.fill").foregroundStyle(Theme.good)
-            if let ip = r?.ipv4 {
-                Button("Connect") {
-                    store.connect(host: ip, port: store.savedPort)
-                    dismiss()
-                }
+            Button("Connect") {
+                if let ip = r?.ipv4 { store.connect(host: ip, port: store.savedPort) } else { store.autoConnect() }
+                dismiss()
             }
         case .some(false):
             Label(r?.message ?? "Could not join", systemImage: "xmark.circle.fill").foregroundStyle(Theme.bad)
             Button("Try again") {
-                // a used or expired code can't seal again: show a new one and scan it
-                if let id = robotID { store.ble.clearResult(id); store.ble.requestCode(id) }
-                qr = nil
+                if let id = robotID { store.ble.clearResult(id) }
                 sent = false
             }
         default:
@@ -105,7 +169,7 @@ struct BluetoothSetupView: View {
     }
 
     private func send() {
-        guard let qr, let id = robotID else { return }
+        guard let id = robotID else { return }
         var creds: [String: Any] = ["ssid": ssid]
         if enterprise {
             var eap: [String: Any] = ["identity": username, "password": password]
@@ -114,7 +178,8 @@ struct BluetoothSetupView: View {
         } else if !password.isEmpty {
             creds["psk"] = password
         }
-        guard let sealed = try? WifiSeal.seal(creds, for: qr), store.ble.sendWifi(id, sealed: sealed) else { return }
+        if hidden { creds["hidden"] = true }
+        guard store.ble.sendWifi(id, credentials: creds) else { sent = true; return }
         password = ""
         sent = true
     }
