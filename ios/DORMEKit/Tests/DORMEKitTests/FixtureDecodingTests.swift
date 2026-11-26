@@ -80,7 +80,8 @@ final class FixtureDecodingTests: XCTestCase {
         let examples = try JSONSerialization.jsonObject(with: data("commands.json")) as! [[String: Any]]
         let names = Set(examples.compactMap { $0["name"] as? String })
         let ours: [RobotCommand] = [.stop(), .claim(), .hold(claim: "x", direction: .forward, seq: 1), .release(claim: "x"),
-                                    .startTask("greet"), .cancelTask("t"), .rearm(), .init("state.get"), .init("capabilities.get")]
+                                    .startTask("greet"), .cancelTask("t"), .rearm(), .init("state.get"), .init("capabilities.get"),
+                                    .screenNote("Back at 5", seconds: 1500)]
         XCTAssertEqual(Set(ours.map(\.name)), names)
         let wire = try JSONSerialization.jsonObject(with: RobotCommand.hold(claim: "c", direction: .left, seq: 3).wireData()) as! [String: Any]
         XCTAssertEqual(wire["type"] as? String, "command")

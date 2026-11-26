@@ -97,7 +97,8 @@ def keyfile_escape(value):
 
 def build_keyfile(conn_id, ssid, psk=None, eap=None, hidden=False, priority=0):
     lines = ["[connection]", f"id={keyfile_escape(conn_id)}", f"uuid={uuid.uuid4()}", "type=wifi",
-             "autoconnect=true", f"autoconnect-priority={int(priority)}", "",
+             "autoconnect=true", f"autoconnect-priority={int(priority)}",
+             "autoconnect-retries=0", "",            # 0 = keep retrying (default gives up after 4)
              "[wifi]", "mode=infrastructure", f"ssid={keyfile_escape(ssid)}", "powersave=2"]
     if hidden:
         lines.append("hidden=true")
