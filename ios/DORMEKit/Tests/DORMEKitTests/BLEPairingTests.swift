@@ -7,6 +7,7 @@ import XCTest
 final class BLEPairingTests: XCTestCase {
     struct Fixture: Decodable {
         let phone_private_hex, phone_public_hex, session_key_hex, welcome_blob_hex: String
+        let robot_public_hex, code, proof_hex: String
         let wifi_nonce_hex, wifi_plain_utf8, wifi_sealed_hex: String
         let welcome: BLEWelcome
     }
@@ -24,6 +25,17 @@ final class BLEPairingTests: XCTestCase {
         XCTAssertEqual(welcome, f.welcome)
         XCTAssertEqual(welcome.ap?.ip, "10.42.0.1")
         XCTAssertEqual(key.withUnsafeBytes { Data($0) }, Data(hex: f.session_key_hex)!)
+    }
+
+    func testProofOfTheScreenCodeMatchesTheRobot() throws {
+        let f = try load()
+        let pairing = BLEPairing(privateKey: try .init(rawRepresentation: Data(hex: f.phone_private_hex)!))
+        let robot = Data(hex: f.robot_public_hex)!
+        XCTAssertEqual(try pairing.proof(code: f.code, robotPublic: robot), Data(hex: f.proof_hex)!)
+        XCTAssertNotEqual(try pairing.proof(code: "000000", robotPublic: robot), Data(hex: f.proof_hex)!)
+        let msg = try pairing.prove(code: f.code, robotPublic: robot)
+        XCTAssertEqual(msg.count, 65)
+        XCTAssertEqual(msg[32], 0)
     }
 
     func testSealsWifiLikeTheRobotExpects() throws {

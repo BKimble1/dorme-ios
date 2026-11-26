@@ -1,7 +1,7 @@
 import SwiftUI
 import DORMEKit
 
-/// Put DORM-E on Wi-Fi over Bluetooth, no code (2026-11-26). The phone pairs over Bluetooth first; that session's
+/// Put DORM-E on Wi-Fi over Bluetooth (2026-11-26; pairing needs the code on its screen since v3). The phone pairs over Bluetooth first; that session's
 /// key seals the Wi-Fi password before it leaves the phone (DORMEKit BLEPairing). DORM-E lists the networks it can
 /// see, so the name does not have to be typed. If the new network fails, the robot goes back to the old one.
 struct BluetoothSetupView: View {
@@ -77,24 +77,9 @@ struct BluetoothSetupView: View {
 
     @ViewBuilder private var pairStep: some View {
         Section {
-            Button {
-                guard let id = robotID else { return }
-                pairing = true
-                pairMessage = nil
-                Task {
-                    pairMessage = await store.pairOverBluetooth(id)
-                    pairing = false
-                }
-            } label: {
-                HStack {
-                    Label("Pair over Bluetooth", systemImage: "dot.radiowaves.left.and.right")
-                    if pairing { Spacer(); ProgressView() }
-                }
-            }
-            .disabled(pairing || !(store.ble.devices.first { $0.id == robotID }?.canPair ?? false))
-            if let pairMessage { Text(pairMessage).font(.footnote).foregroundStyle(Theme.bad) }
+            if let id = robotID { BluetoothPairCard(robotID: id) }
         } footer: {
-            Text("No code needed. Pairing is open for 10 minutes after DORM-E is switched on, or while no phone is paired.")
+            Text("Pairing needs the code DORM-E shows on its screen, so only someone who can see the robot can pair.")
         }
     }
 

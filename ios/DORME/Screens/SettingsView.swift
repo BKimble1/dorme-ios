@@ -242,18 +242,7 @@ struct PairedPhonesView: View {
                     }
                 }
             } footer: {
-                Text(phones?.bluetoothPairingOpen == true
-                     ? "Bluetooth pairing is open now."
-                     : "Bluetooth pairing opens for 10 minutes after DORM-E is switched on.")
-            }
-            Section {
-                Button("Add another phone") {
-                    Task {
-                        let ack = await store.openBluetoothPairing()
-                        note = ack.ok ? "For 5 minutes, another phone near DORM-E can pair over Bluetooth." : ack.message
-                        phones = await store.pairedPhones()
-                    }
-                }
+                Text("To add a phone, open the DORM-E app on it near the robot and tap Pair over Bluetooth. It needs the code DORM-E shows on its screen.")
             }
             if let note { Section { Text(note).foregroundStyle(.secondary) } }
         }

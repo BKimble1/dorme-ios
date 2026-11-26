@@ -369,24 +369,52 @@ class ApiServer:
             await self._send_json(writer, 200 if code else 423, ack(None, bool(code), None if code else err,
                                                                      result={"expires_in_s": left_s}))
         elif p == "/api/v1/ble/hello" and m == "POST":
+            # Bluetooth pairing, two steps (provision.py): a hello shows a code on the robot's screen; a proof of that
+            # code gets the welcome. The code leaves the screen as soon as a phone pairs. Loopback only (BLE bridge).
             body = req.json()
             now = time.monotonic()
             self.hello_times = [t for t in self.hello_times if now - t < 60] + [now]
-            if len(self.hello_times) > 10:
+            if len(self.hello_times) > 20:
                 await self._send_json(writer, 429, ack(None, False, "LOCKED_OUT", "Too many pairing tries. Wait a minute."))
-                return
-            if not self.ble_pairing_open():
-                await self._send_json(writer, 423, ack(None, False, "PAIR_CLOSED", api.ACK_CODES["PAIR_CLOSED"]))
                 return
             try:
                 phone_pub = base64.b64decode(body.get("pub", ""), validate=True)
+                proof = base64.b64decode(body["proof"], validate=True) if body.get("proof") else None
             except (ValueError, TypeError):
-                raise HttpError(400, "pub must be base64")
-            name = " ".join(str(body.get("name") or "iPhone").split())[:40] or "iPhone"
-            try:
-                blob = self.provisioner.ble_hello(phone_pub, await self.ble_welcome(name))
-            except ValueError as exc:
-                raise HttpError(400, str(exc))
+                raise HttpError(400, "pub and proof must be base64")
+            if len(phone_pub) != 32:
+                raise HttpError(400, "phone key must be 32 bytes")
+            if self.auth.clock() < self.auth.locked_until:
+                await self._send_json(writer, 429, ack(None, False, "LOCKED_OUT", "Too many wrong codes. Wait a minute."))
+                return
+            if proof is None:
+                name = " ".join(str(body.get("name") or "iPhone").split())[:40] or "iPhone"
+                code, seconds, err, _ = self.auth.show_code()
+                if err:
+                    await self._send_json(writer, 429, ack(None, False, err, "Too many wrong codes. Wait a minute."))
+                    return
+                self.coord.show_pairing(code, seconds)
+                robot_pub = self.provisioner.ble_start(phone_pub, name, seconds)
+                await self._send_json(writer, 200, ack(None, True, result={"robot_pub": base64.b64encode(robot_pub).decode(),
+                                                                            "code_seconds": seconds}))
+                return
+            code = self.auth.active_code()
+            if code is None:
+                await self._send_json(writer, 409, ack(None, False, "NO_CODE", "The code expired. Start pairing again."))
+                return
+            hit = self.provisioner.ble_check(phone_pub, proof, code)
+            if hit is None:
+                self.auth.note_failure()
+                if self.auth.clock() < self.auth.locked_until:
+                    self.auth.cancel_code()
+                    self.coord.hide_pairing()
+                await self._send_json(writer, 403, ack(None, False, "BAD_PIN", "That code does not match DORM-E's screen."))
+                return
+            key, robot_pub, name = hit
+            self.auth.cancel_code()                 # used up: off the screen now
+            self.auth.failures, self.auth.lock_s = 0, 60
+            self.coord.hide_pairing()
+            blob = self.provisioner.ble_seal_welcome(phone_pub, key, robot_pub, await self.ble_welcome(name))
             self.coord.show_paired_notice(name)
             await self._send_json(writer, 200, ack(None, True, result={"blob": base64.b64encode(blob).decode()}))
         elif p == "/api/v1/ble/scan" and m == "GET":

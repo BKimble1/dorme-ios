@@ -20,7 +20,8 @@ import os
 import time
 
 AAD = b"dorme-wifi-v1"
-BLE_INFO = b"dorme-ble-v2"
+BLE_INFO = b"dorme-ble-v3"           # v3 (2026-11-26): the on-screen code is required again
+BLE_PROOF = b"dorme-pair-code:"
 BLE_WIFI_AAD = b"dorme-wifi-v2"
 BLE_SESSION_S = 15 * 60
 
@@ -66,26 +67,59 @@ class Provisioner:
     # Trust model: whoever is in Bluetooth range while pairing is open (trust on first use). There is no
     # out-of-band check, so a relay attacker in range during that window could pair too; the window, the
     # on-screen notice "Paired: <name>" and the paired-phones list in the app are the mitigations.
-    def ble_hello(self, phone_pub, welcome):
-        """-> robot_pub(32) | nonce(12) | AES-GCM(welcome JSON)."""
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    # Bluetooth pairing with the on-screen code (v3, owner's request 2026-11-26: nobody in Bluetooth range may pair
+    # without seeing the robot's screen):
+    #   1. phone -> pub(32) | name. Robot shows a one-time 6-digit code and answers with an ephemeral robot key.
+    #   2. phone -> pub(32) | 0x00 | proof(32), proof = HMAC-SHA256(key, "dorme-pair-code:" + code),
+    #      key = HKDF-SHA256(X25519 shared, salt = phone_pub | robot_pub, info "dorme-ble-v3").
+    #   The code itself never travels. The robot checks the proof (online only: one try per message, 5 wrong tries
+    #   lock pairing out), clears the code from its screen, and answers robot_pub | nonce | AES-GCM(welcome, aad = info).
+    # The same key later seals the Wi-Fi password the phone sends (aad "dorme-wifi-v2").
+    def ble_start(self, phone_pub, name, ttl_s, priv=None):
+        """Step 1: -> robot_pub (32). The caller shows the code on the robot's screen."""
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
         if not isinstance(phone_pub, (bytes, bytearray)) or len(phone_pub) != 32:
             raise ValueError("phone key must be 32 bytes")
-        priv = X25519PrivateKey.generate()
+        priv = priv or X25519PrivateKey.generate()
         robot_pub = priv.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        now = time.monotonic()
+        pending = {k: v for k, v in getattr(self, "pending", {}).items() if v[3] > now}
+        while len(pending) >= 4:
+            pending.pop(min(pending, key=lambda k: pending[k][3]))
+        pending[bytes(phone_pub)] = (priv, robot_pub, str(name), now + ttl_s)
+        self.pending = pending
+        return robot_pub
+
+    def ble_check(self, phone_pub, proof, code):
+        """Step 2: -> (key, robot_pub, name) if the proof matches the code, else None."""
+        import hashlib
+        import hmac
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+        entry = getattr(self, "pending", {}).get(bytes(phone_pub))
+        if not entry or entry[3] <= time.monotonic() or not code or not isinstance(proof, (bytes, bytearray)):
+            return None
+        priv, robot_pub, name, _ = entry
         shared = priv.exchange(X25519PublicKey.from_public_bytes(bytes(phone_pub)))
-        key = HKDF(algorithm=hashes.SHA256(), length=32, salt=bytes(phone_pub) + robot_pub,
-                   info=BLE_INFO).derive(shared)
+        key = HKDF(algorithm=hashes.SHA256(), length=32, salt=bytes(phone_pub) + robot_pub, info=BLE_INFO).derive(shared)
+        want = hmac.new(key, BLE_PROOF + code.encode(), hashlib.sha256).digest()
+        if not hmac.compare_digest(want, bytes(proof)):
+            return None
+        return key, robot_pub, name
+
+    def ble_seal_welcome(self, phone_pub, key, robot_pub, welcome, nonce=None):
+        """-> robot_pub(32) | nonce(12) | AES-GCM(welcome JSON). Keeps the key for sealed Wi-Fi details."""
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        getattr(self, "pending", {}).pop(bytes(phone_pub), None)
         now = time.monotonic()
         sessions = {k: v for k, v in getattr(self, "sessions", {}).items() if v[1] > now}
         while len(sessions) >= 4:
             sessions.pop(min(sessions, key=lambda k: sessions[k][1]))
         sessions[bytes(phone_pub)] = (key, now + BLE_SESSION_S)
         self.sessions = sessions
-        nonce = os.urandom(12)
+        nonce = nonce or os.urandom(12)
         body = json.dumps(welcome, separators=(",", ":")).encode()
         return robot_pub + nonce + AESGCM(key).encrypt(nonce, body, BLE_INFO)
 
@@ -170,6 +204,19 @@ def ble_phone_side(welcome_blob, phone_priv):
     shared = phone_priv.exchange(X25519PublicKey.from_public_bytes(robot_pub))
     key = HKDF(algorithm=hashes.SHA256(), length=32, salt=phone_pub + robot_pub, info=BLE_INFO).derive(shared)
     return json.loads(AESGCM(key).decrypt(nonce, sealed, BLE_INFO)), key
+
+
+def ble_proof(phone_priv, robot_pub, code):
+    """What the phone sends in step 2 (tests and simulator): -> proof (32 bytes)."""
+    import hashlib
+    import hmac
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    phone_pub = phone_priv.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    shared = phone_priv.exchange(X25519PublicKey.from_public_bytes(bytes(robot_pub)))
+    key = HKDF(algorithm=hashes.SHA256(), length=32, salt=phone_pub + bytes(robot_pub), info=BLE_INFO).derive(shared)
+    return hmac.new(key, BLE_PROOF + code.encode(), hashlib.sha256).digest()
 
 
 def ble_seal_wifi(key, phone_pub, creds):

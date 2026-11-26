@@ -107,38 +107,65 @@ final class BLEScanner {
     }
 
     enum PairOutcome {
+        case needCode
         case paired(BLEWelcome)
         case refused(code: String, message: String)
     }
 
-    /// Pair over Bluetooth with no code (robot side: ble_bridge.py "pair"). Works while DORM-E's pairing is open:
-    /// for 10 minutes after it is switched on, while no phone is paired, or after "Add another phone".
-    func pair(_ id: UUID, phoneName: String) async -> PairOutcome {
-        guard let p = peripherals[id], p.state == .connected, let ch = pairChars[id] else {
-            return .refused(code: "NO_LINK", message: "Not connected to DORM-E over Bluetooth yet. Move closer and try again.")
-        }
-        let pairing = BLEPairing()
+    /// Bluetooth pairing in progress: the phone's key and the robot's key from step 1, per robot.
+    @ObservationIgnored private var pending: [UUID: (pairing: BLEPairing, robot: Data)] = [:]
+
+    private func exchange(_ id: UUID, _ message: Data) async -> Data {
+        guard let p = peripherals[id], p.state == .connected, let ch = pairChars[id] else { return Data() }
         pairWaiters[id]?.resume(returning: Data())
-        let reply: Data = await withCheckedContinuation { cont in
+        return await withCheckedContinuation { cont in
             pairWaiters[id] = cont
-            writeFramed(pairing.hello(name: phoneName), to: ch, on: p)
+            writeFramed(message, to: ch, on: p)
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
                 if let waiter = self?.pairWaiters.removeValue(forKey: id) { waiter.resume(returning: Data()) }
             }
         }
-        guard let first = reply.first else {
+    }
+
+    private func refusal(_ reply: Data) -> PairOutcome {
+        guard !reply.isEmpty else {
             return .refused(code: "TIMEOUT", message: "DORM-E did not answer over Bluetooth. Move closer and try again.")
-        }
-        if first == 1, let opened = try? pairing.open(reply.dropFirst()) {
-            sessions[id] = (pairing, opened.1)
-            pairedOverBluetooth.insert(id)
-            return .paired(opened.0)
         }
         let info = (try? JSONSerialization.jsonObject(with: Data(reply.dropFirst()))) as? [String: Any]
         let code = info?["code"] as? String ?? "REFUSED"
         let message = (info?["message"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? AckCode.message(code)
         return .refused(code: code, message: message)
+    }
+
+    /// Step 1 (robot side: ble_bridge.py "pair"): DORM-E shows a one-time code on its screen. -> .needCode
+    func startPairing(_ id: UUID, phoneName: String) async -> PairOutcome {
+        guard let p = peripherals[id], p.state == .connected, pairChars[id] != nil else {
+            return .refused(code: "NO_LINK", message: "Not connected to DORM-E over Bluetooth yet. Move closer and try again.")
+        }
+        _ = p
+        let pairing = BLEPairing()
+        let reply = await exchange(id, pairing.hello(name: phoneName))
+        if reply.first == 2, reply.count >= 33 {
+            pending[id] = (pairing, Data(reply.dropFirst().prefix(32)))
+            return .needCode
+        }
+        return refusal(reply)
+    }
+
+    /// Step 2: prove the code typed from DORM-E's screen (the code itself is never sent). The robot clears it.
+    func finishPairing(_ id: UUID, code: String) async -> PairOutcome {
+        guard let (pairing, robot) = pending[id], let msg = try? pairing.prove(code: code, robotPublic: robot) else {
+            return .refused(code: "NO_CODE", message: "Start pairing again.")
+        }
+        let reply = await exchange(id, msg)
+        if reply.first == 1, let opened = try? pairing.open(Data(reply.dropFirst())) {
+            pending[id] = nil
+            sessions[id] = (pairing, opened.1)
+            pairedOverBluetooth.insert(id)
+            return .paired(opened.0)
+        }
+        return refusal(reply)
     }
 
     /// Robots this phone holds a Bluetooth pairing session with (observable, unlike the keys themselves).

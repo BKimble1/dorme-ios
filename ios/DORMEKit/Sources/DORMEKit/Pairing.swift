@@ -92,7 +92,10 @@ public struct BLEWelcome: Codable, Equatable, Sendable {
 /// Phone side of the Bluetooth pairing: X25519 with a fresh key each time, HKDF-SHA256 (salt = phone key |
 /// robot key, info "dorme-ble-v2"), AES-256-GCM. The same session key seals the Wi-Fi password later.
 public struct BLEPairing: Sendable {
-    public static let info = Data("dorme-ble-v2".utf8)
+    /// v3 (2026-11-26): pairing needs the code on DORM-E's screen again. The phone proves it knows the code
+    /// (HMAC with the pairing key) without sending it; see pi/dorme_coord/provision.py.
+    public static let info = Data("dorme-ble-v3".utf8)
+    public static let proofLabel = Data("dorme-pair-code:".utf8)
     public static let wifiInfo = Data("dorme-wifi-v2".utf8)
     public let privateKey: Curve25519.KeyAgreement.PrivateKey
     public var publicKey: Data { privateKey.publicKey.rawRepresentation }
@@ -108,15 +111,35 @@ public struct BLEPairing: Sendable {
         return out
     }
 
+    /// The pairing key shared with this robot key (HKDF-SHA256, salt phone key | robot key).
+    public func key(robotPublic: Data) throws -> SymmetricKey {
+        let robot = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: robotPublic)
+        let shared = try privateKey.sharedSecretFromKeyAgreement(with: robot)
+        var salt = publicKey
+        salt.append(robotPublic)
+        return shared.hkdfDerivedSymmetricKey(using: SHA256.self, salt: salt, sharedInfo: Self.info, outputByteCount: 32)
+    }
+
+    /// HMAC-SHA256(pairing key, "dorme-pair-code:" + code): shows the robot this phone saw the code.
+    public func proof(code: String, robotPublic: Data) throws -> Data {
+        var msg = Self.proofLabel
+        msg.append(Data(code.utf8))
+        return Data(HMAC<SHA256>.authenticationCode(for: msg, using: try key(robotPublic: robotPublic)))
+    }
+
+    /// Step 2, written to the pair characteristic: phone key (32) | 0x00 | proof (32).
+    public func prove(code: String, robotPublic: Data) throws -> Data {
+        var out = publicKey
+        out.append(0)
+        out.append(try proof(code: code, robotPublic: robotPublic))
+        return out
+    }
+
     /// Opens robot key (32) | nonce (12) | sealed welcome. -> welcome and the session key.
     public func open(_ blob: Data) throws -> (BLEWelcome, SymmetricKey) {
         guard blob.count > 32 + 12 + 16 else { throw CryptoKitError.incorrectParameterSize }
         let b = Data(blob)
-        let robot = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: b.prefix(32))
-        let shared = try privateKey.sharedSecretFromKeyAgreement(with: robot)
-        var salt = publicKey
-        salt.append(b.prefix(32))
-        let key = shared.hkdfDerivedSymmetricKey(using: SHA256.self, salt: salt, sharedInfo: Self.info, outputByteCount: 32)
+        let key = try key(robotPublic: Data(b.prefix(32)))
         let box = try AES.GCM.SealedBox(combined: b.dropFirst(32))
         let plain = try AES.GCM.open(box, using: key, authenticating: Self.info)
         return (try JSONDecoder().decode(BLEWelcome.self, from: plain), key)

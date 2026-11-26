@@ -150,6 +150,8 @@ def pair_reply(reply):
     import base64
     if reply.get("ok") and (reply.get("result") or {}).get("blob"):
         return b"\x01" + base64.b64decode(reply["result"]["blob"])
+    if reply.get("ok") and (reply.get("result") or {}).get("robot_pub"):      # step 1: the code is on the screen
+        return b"\x02" + base64.b64decode(reply["result"]["robot_pub"])
     err = {"code": reply.get("code") or "REFUSED", "message": (reply.get("message") or "")[:160]}
     return b"\x00" + json.dumps(err, separators=(",", ":")).encode()
 
@@ -306,8 +308,10 @@ def main():  # pragma: no cover - needs BlueZ
             cache["pair"] = pair_reply({"code": "BAD_REQUEST"})
             pair_chr.notify(b"\x00")
             return
-        name = blob[32:72].decode("utf-8", "replace")
-        body = {"pub": base64.b64encode(blob[:32]).decode(), "name": name}
+        if len(blob) >= 65 and blob[32] == 0:            # step 2: pub | 0x00 | proof(32)
+            body = {"pub": base64.b64encode(blob[:32]).decode(), "proof": base64.b64encode(blob[33:65]).decode()}
+        else:                                            # step 1: pub | name
+            body = {"pub": base64.b64encode(blob[:32]).decode(), "name": blob[32:72].decode("utf-8", "replace")}
 
         def done(reply):
             if isinstance(reply, Exception):

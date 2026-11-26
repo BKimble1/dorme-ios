@@ -2,7 +2,7 @@ import SwiftUI
 import DORMEKit
 
 /// Connection, inline on the home page. Finds the robot by itself; shows only what is needed next.
-/// 2026-11-26: pairing is over Bluetooth with no code (the code and QR stay as a fallback), and when the robot is
+/// 2026-11-26: pairing is over Bluetooth with the code on DORM-E's screen (BluetoothPairCard), and when the robot is
 /// paired but not on this phone's network the panel offers Wi-Fi setup over Bluetooth and the robot's own Wi-Fi.
 struct ConnectPanel: View {
     @Environment(RobotStore.self) private var store
@@ -12,6 +12,7 @@ struct ConnectPanel: View {
     @State private var showBluetooth = false
     @State private var pairing = false
     @State private var pairMessage: String?
+    @State private var bleID: UUID?
 
     var body: some View {
         Card(fill: Theme.cardRaised) {
@@ -60,7 +61,7 @@ struct ConnectPanel: View {
                     Button { showBluetooth = true } label: { Label("Put on Wi-Fi", systemImage: "wifi") }
                         .buttonStyle(.borderedProminent).tint(Theme.ink)
                 } else {
-                    Button { pair(robot.id) } label: {
+                    Button { bleID = robot.id } label: {
                         Label("Connect with Bluetooth", systemImage: "dot.radiowaves.left.and.right")
                     }
                     .buttonStyle(.borderedProminent).tint(Theme.ink)
@@ -82,6 +83,9 @@ struct ConnectPanel: View {
             .tint(Theme.ink)
             .accessibilityLabel("More")
         }
+        if let bleID {
+            BluetoothPairCard(robotID: bleID) { self.bleID = nil }
+        }
         if let hot = store.hotspot {
             HotspotHint(ssid: hot.ssid, password: hot.password)
         }
@@ -96,15 +100,6 @@ struct ConnectPanel: View {
                     .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .onAppear { address = store.savedHost }
-        }
-    }
-
-    private func pair(_ id: UUID) {
-        pairing = true
-        pairMessage = nil
-        Task {
-            pairMessage = await store.pairOverBluetooth(id)
-            pairing = false
         }
     }
 
@@ -142,7 +137,8 @@ struct HotspotHint: View {
     }
 }
 
-/// Pairing: over Bluetooth when DORM-E is nearby (no code); otherwise the code on DORM-E's screen or the label PIN.
+/// Pairing: over Bluetooth when DORM-E is nearby (code on its screen, typed here); otherwise over Wi-Fi with the
+/// screen code or the label PIN.
 struct PairPanel: View {
     @Environment(RobotStore.self) private var store
     @State private var code = ""
@@ -157,21 +153,8 @@ struct PairPanel: View {
         VStack(alignment: .leading, spacing: 12) {
             if let robot = nearby, !useCode {
                 Text("Pair with DORM-E").font(.headline)
-                HStack {
-                    Button {
-                        busy = true
-                        message = nil
-                        Task {
-                            message = await store.pairOverBluetooth(robot.id)
-                            busy = false
-                        }
-                    } label: { Label("Pair over Bluetooth", systemImage: "dot.radiowaves.left.and.right") }
-                    .buttonStyle(.borderedProminent).tint(Theme.ink).disabled(busy)
-                    if busy { ProgressView() }
-                    Spacer()
-                    Button("Use a code") { useCode = true }.font(.footnote)
-                }
-                if let message { Text(message).font(.footnote).foregroundStyle(Theme.bad) }
+                BluetoothPairCard(robotID: robot.id)
+                Button("Use the label PIN instead") { useCode = true }.font(.footnote)
             } else {
                 codeEntry
             }

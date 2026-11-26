@@ -241,7 +241,7 @@ final class RobotStore {
         await network?.post("api/v1/system/\(action)", body: ["confirm": true]) ?? .failure(nil, "OFFLINE")
     }
 
-    // MARK: Bluetooth pairing (no code), 2026-11-26
+    // MARK: Bluetooth pairing (code on the robot's screen since v3), 2026-11-26
 
     /// The robot's own Wi-Fi, learned when pairing over Bluetooth: join it where there is no other Wi-Fi.
     var hotspot: (ssid: String, password: String)? {
@@ -251,8 +251,20 @@ final class RobotStore {
     }
 
     /// Pair with a nearby robot over Bluetooth, save every way to reach it, then connect. nil = paired.
-    func pairOverBluetooth(_ id: UUID) async -> String? {
-        switch await ble.pair(id, phoneName: UIDevice.current.name) {
+    /// Bluetooth pairing, step 1: DORM-E shows a code on its screen. nil = type the code now; else why not.
+    func startBluetoothPairing(_ id: UUID) async -> String? {
+        switch await ble.startPairing(id, phoneName: UIDevice.current.name) {
+        case .needCode: return nil
+        case .refused(_, let message): return message
+        case .paired: return nil
+        }
+    }
+
+    /// Step 2: the code from DORM-E's screen. nil = paired.
+    func finishBluetoothPairing(_ id: UUID, code: String) async -> String? {
+        switch await ble.finishPairing(id, code: code) {
+        case .needCode:
+            return "Start pairing again."
         case .refused(_, let message):
             return message
         case .paired(let w):
@@ -277,7 +289,7 @@ final class RobotStore {
         }
     }
 
-    /// The robot this phone paired with over Bluetooth (for Wi-Fi setup without a code).
+    /// The robot this phone paired with over Bluetooth (for Wi-Fi setup over Bluetooth).
     private(set) var bluetoothRobot: UUID?
 
     func screenNote(_ text: String, seconds: Int) async -> Ack {
